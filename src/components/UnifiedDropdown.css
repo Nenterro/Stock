@@ -1,0 +1,95 @@
+.unified-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.dropdown-trigger {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: var(--text-primary);
+  font-size: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.dropdown-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdown-trigger:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dropdown-trigger.open {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.dropdown-icon {
+  color: var(--text-secondary);
+  transition: transform 0.2s;
+}
+
+.dropdown-trigger.open .dropdown-icon {
+  transform: rotate(180deg);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 100%;
+  max-height: 400px;
+  overflow-y: auto;
+  background: rgba(30, 30, 40, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 500;
+  animation: dropdownFadeIn 0.2s ease-out;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+@keyframes dropdownFadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dropdown-item {
+  padding: 12px 16px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.dropdown-item.selected {
+  background: var(--accent-glow);
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.dropdown-empty {
+  padding: 12px 16px;
+  color: var(--text-secondary);
+  font-style: italic;
+  text-align: center;
+}

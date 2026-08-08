@@ -1,0 +1,195 @@
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  X, ArrowDown, ArrowUp, Wallet, ArrowUpRight, 
+  Coins, Receipt 
+} from 'lucide-react';
+import AssetSelect from './AssetSelect';
+import { useTransactions } from '../context/TransactionContext';
+import './AddTransactionModal.css';
+
+const TX_TYPES = [
+  { id: 'BUY', label: 'BUY', icon: ArrowDown, color: '#EF5350' },
+  { id: 'SELL', label: 'SELL', icon: ArrowUp, color: '#81C784' },
+  { id: 'DEPOSIT', label: 'DEPOSIT', icon: Wallet, color: '#64B5F6' },
+  { id: 'WITHDRAW', label: 'WITHDRAW', icon: ArrowUpRight, color: '#FFB74D' },
+  { id: 'DIVIDEND', label: 'DIVIDEND', icon: Coins, color: '#CE93D8' },
+  { id: 'TAX', label: 'TAX', icon: Receipt, color: '#90A4AE' },
+];
+
+export default function AddTransactionModal({ isOpen, onClose }) {
+  const { addTransaction } = useTransactions();
+  
+  const [type, setType] = useState('BUY');
+  const [asset, setAsset] = useState(null); // { symbol, name }
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [shares, setShares] = useState('');
+  const [price, setPrice] = useState('');
+  const [fees, setFees] = useState('');
+  const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState('USD');
+  const [portfolio, setPortfolio] = useState('Main');
+
+  if (!isOpen) return null;
+
+  const isTradeType = type === 'BUY' || type === 'SELL';
+  const needsAsset = type !== 'DEPOSIT' && type !== 'WITHDRAW';
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    
+    // Basic validation
+    if (needsAsset && !asset) {
+      alert("Please select an asset.");
+      return;
+    }
+
+    const txData = {
+      type,
+      ticker: asset ? asset.symbol : 'CASH',
+      assetName: asset ? asset.name : 'Cash',
+      date,
+      currency,
+      portfolio,
+      exchangeRate: currency === 'USD' ? 278.0 : 1.0, // Mock exchange rate for now
+    };
+
+    if (isTradeType) {
+      txData.shares = parseFloat(shares) || 0;
+      txData.price = parseFloat(price) || 0;
+      txData.fees = parseFloat(fees) || 0;
+    } else {
+      let rawAmount = parseFloat(amount) || 0;
+      // Depending on logic, withdrawal/tax might need to be stored as negative
+      // But the context adds it directly. Let's just pass the absolute amount and handle sign later if needed, 
+      // or set negative here if the dart model expected signed.
+      if (type === 'WITHDRAW' || type === 'TAX') {
+        rawAmount = -Math.abs(rawAmount);
+      } else {
+        rawAmount = Math.abs(rawAmount);
+      }
+      txData.amount = rawAmount;
+    }
+
+    addTransaction(txData);
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <motion.div 
+        className="modal-content glass-panel" 
+        onClick={e => e.stopPropagation()}
+        initial={{ y: 50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 50, opacity: 0 }}
+      >
+        <div className="modal-header">
+          <h2>Add Transaction</h2>
+          <button className="close-btn" type="button" onClick={onClose}><X size={24} /></button>
+        </div>
+
+        <form className="modal-body" onSubmit={handleSubmit}>
+          {/* Type Selector */}
+          <div className="type-grid">
+            {TX_TYPES.map(t => {
+              const isSelected = type === t.id;
+              const Icon = t.icon;
+              return (
+                <div 
+                  key={t.id}
+                  className={`type-chip ${isSelected ? 'selected' : ''}`}
+                  style={{ 
+                    '--chip-color': t.color,
+                    borderColor: isSelected ? t.color : 'var(--border-color)',
+                    backgroundColor: isSelected ? `${t.color}22` : 'var(--bg-surface)'
+                  }}
+                  onClick={() => setType(t.id)}
+                >
+                  <Icon size={14} color={isSelected ? t.color : 'var(--text-secondary)'} />
+                  <span style={{ color: isSelected ? t.color : 'var(--text-secondary)' }}>{t.label}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Form Fields */}
+          <div className="form-fields">
+            {needsAsset && (
+              <div className="form-group full-width">
+                <label>Asset</label>
+                <AssetSelect 
+                  value={asset} 
+                  onChange={setAsset} 
+                  placeholder={type === 'DIVIDEND' || type === 'TAX' ? "Search stock/ETF..." : "Search asset to trade..."}
+                />
+              </div>
+            )}
+
+            <div className="form-group half-width">
+              <label>Date</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} required />
+            </div>
+
+            <div className="form-group half-width currency-toggle">
+              <div 
+                className={`curr-btn ${currency === 'PKR' ? 'active' : ''}`}
+                onClick={() => setCurrency('PKR')}
+              >
+                PKR
+              </div>
+              <div 
+                className={`curr-btn ${currency === 'USD' ? 'active' : ''}`}
+                onClick={() => setCurrency('USD')}
+              >
+                USD
+              </div>
+            </div>
+
+            {isTradeType ? (
+              <>
+                <div className="form-group half-width">
+                  <label>Shares</label>
+                  <input type="number" step="any" min="0" value={shares} onChange={e => setShares(e.target.value)} required placeholder="0.0" />
+                </div>
+                <div className="form-group half-width">
+                  <label>Price ({currency})</label>
+                  <input type="number" step="any" min="0" value={price} onChange={e => setPrice(e.target.value)} required placeholder="0.0" />
+                </div>
+                <div className="form-group half-width">
+                  <label>Fees ({currency})</label>
+                  <input type="number" step="any" min="0" value={fees} onChange={e => setFees(e.target.value)} placeholder="0.0" />
+                </div>
+              </>
+            ) : (
+              <div className="form-group full-width">
+                <label>Amount ({currency})</label>
+                <input type="number" step="any" min="0" value={amount} onChange={e => setAmount(e.target.value)} required placeholder="0.0" />
+                <span className="hint">
+                  {(type === 'WITHDRAW' || type === 'TAX') 
+                    ? "Enter absolute amount — recorded as a deduction."
+                    : "Enter the amount received."}
+                </span>
+              </div>
+            )}
+            
+            <div className="form-group half-width">
+              <label>Portfolio</label>
+              <select value={portfolio} onChange={e => setPortfolio(e.target.value)}>
+                <option value="Main">Main</option>
+                <option value="Trading">Trading</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="modal-footer">
+            <button type="button" className="btn-cancel" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-submit" style={{ backgroundColor: TX_TYPES.find(t => t.id === type)?.color, color: '#000' }}>
+              Add {TX_TYPES.find(t => t.id === type)?.label}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}

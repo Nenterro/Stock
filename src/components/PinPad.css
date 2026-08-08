@@ -1,0 +1,96 @@
+.pin-pad-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 320px;
+  user-select: none;
+}
+
+.pin-pad-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  text-align: center;
+}
+
+.pin-pad-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.pin-dots {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin: 8px 0 16px;
+}
+
+.pin-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pin-dot.filled {
+  background: var(--accent-color, #6366f1);
+  border-color: var(--accent-color, #6366f1);
+  box-shadow: 0 0 12px var(--accent-color, #6366f1);
+  transform: scale(1.15);
+}
+
+.pin-keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  width: 100%;
+  max-width: 270px;
+}
+
+.keypad-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  font-size: 24px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.keypad-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.keypad-btn:active {
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.keypad-btn.action-btn {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.keypad-btn.action-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}

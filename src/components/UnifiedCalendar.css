@@ -1,0 +1,341 @@
+.unified-calendar {
+  width: 100%;
+  max-width: 440px;
+  background: rgba(30, 30, 40, 0.95);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s ease;
+}
+
+.unified-calendar.range-mode {
+  max-width: 620px;
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.calendar-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cal-nav-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cal-nav-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+  }
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+
+
+
+.cal-day-name {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.cal-day {
+  aspect-ratio: 1;
+  height: auto;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cal-day:not(.empty):hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.cal-day.empty {
+  cursor: default;
+}
+
+.cal-day.today {
+  color: var(--accent-color);
+  font-weight: 700;
+  background: var(--accent-glow);
+}
+
+.cal-day.selected {
+  background: var(--accent-gradient);
+  color: white;
+  box-shadow: 0 4px 12px var(--accent-glow);
+  font-weight: 700;
+}
+
+.cal-nav-btn.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.cal-day.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  color: var(--text-secondary);
+  pointer-events: none;
+  background: transparent !important;
+}
+
+.cal-day.in-range {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+}
+
+.cal-day.range-start, .cal-day.range-end {
+  background: var(--accent-color);
+  border-radius: 50%;
+  color: white;
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+.calendar-sidebar {
+  width: 200px;
+  background: rgba(0, 0, 0, 0.25);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  flex-shrink: 0;
+}
+
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-label {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.sidebar-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.15;
+}
+
+.calendar-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+  gap: 12px;
+}
+
+.calendar-actions button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.calendar-actions .cancel-btn {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.calendar-actions .cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.calendar-actions .apply-btn {
+  background: var(--accent-gradient);
+  color: white;
+}
+
+.calendar-actions .apply-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.calendar-actions .apply-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+@media (max-width: 600px) {
+  .unified-calendar {
+    flex-direction: column !important;
+    max-width: 380px !important;
+  }
+  .calendar-sidebar {
+    width: 100% !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    border-right: none !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+    padding: 16px 24px !important;
+    gap: 16px !important;
+  }
+  .sidebar-group {
+    align-items: center;
+  }
+  .calendar-main {
+    padding: 16px !important;
+  }
+}
+
+/* Desktop Dynamic Scaling */
+@media (min-width: 769px) {
+  .unified-calendar {
+    max-width: 500px;
+  }
+
+  .unified-calendar.range-mode {
+    max-width: 720px;
+  }
+
+  .calendar-sidebar {
+    width: 220px;
+    padding: 32px 24px;
+    gap: 36px;
+  }
+
+  .sidebar-label {
+    font-size: 14px;
+  }
+
+  .sidebar-value {
+    font-size: 32px;
+  }
+
+  .calendar-main {
+    padding: 28px 32px;
+  }
+
+  .calendar-header h3 {
+    font-size: 19px;
+  }
+
+  .cal-nav-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .calendar-grid {
+    gap: 10px;
+  }
+
+  .cal-day-name {
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+
+  .cal-day {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .calendar-actions button {
+    padding: 10px 22px;
+    font-size: 15px;
+    border-radius: 10px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .unified-calendar {
+    max-width: 540px;
+  }
+
+  .unified-calendar.range-mode {
+    max-width: 800px;
+  }
+
+  .calendar-sidebar {
+    width: 250px;
+    padding: 36px 28px;
+    gap: 40px;
+  }
+
+  .sidebar-label {
+    font-size: 14px;
+  }
+
+  .sidebar-value {
+    font-size: 36px;
+  }
+
+  .calendar-main {
+    padding: 32px 36px;
+  }
+
+  .calendar-header h3 {
+    font-size: 21px;
+  }
+
+  .cal-nav-btn {
+    width: 42px;
+    height: 42px;
+  }
+
+  .calendar-grid {
+    gap: 12px;
+  }
+
+  .cal-day-name {
+    font-size: 15px;
+    margin-bottom: 12px;
+  }
+
+  .cal-day {
+    font-size: 16px;
+    font-weight: 600;
+  }
+}
+

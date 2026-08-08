@@ -1,0 +1,142 @@
+import React, { useState, useEffect } from 'react';
+import { X, Search } from 'lucide-react';
+import { useData } from '../context/DataContext';
+import AssetSelect from './AssetSelect';
+import { format } from 'date-fns';
+
+export default function AddTransactionModal({ isOpen, onClose, initialData }) {
+  const { addTransaction, updateTransaction, portfolios } = useData();
+
+  const [type, setType] = useState(initialData?.type || 'buy');
+  const [ticker, setTicker] = useState(initialData?.ticker || '');
+  const [shares, setShares] = useState(initialData?.shares || '');
+  const [price, setPrice] = useState(initialData?.price || '');
+  const [fees, setFees] = useState(initialData?.fees || '0');
+  const [date, setDate] = useState(initialData?.date ? format(new Date(initialData.date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
+  const [amount, setAmount] = useState(initialData?.amount || '');
+  const [portfolio, setPortfolio] = useState(initialData?.portfolio || (portfolios.length > 0 ? portfolios[0].name : 'Main'));
+  const [note, setNote] = useState(initialData?.note || '');
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const tx = {
+      ...(initialData || {}),
+      type,
+      ticker,
+      shares: parseFloat(shares) || 0,
+      price: parseFloat(price) || 0,
+      fees: parseFloat(fees) || 0,
+      date: new Date(date).toISOString(),
+      amount: parseFloat(amount) || 0,
+      note,
+      portfolio,
+      currency: 'USD',
+      exchangeRate: 1
+    };
+
+    if (initialData?.id) {
+      await updateTransaction(tx);
+    } else {
+      await addTransaction(tx);
+    }
+
+    onClose();
+  };
+
+  const isTrade = type === 'buy' || type === 'sell';
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(20,20,25,0.95)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <form onSubmit={handleSubmit} className="glass-panel" style={{ padding: '32px', display: 'flex', flexDirection: 'column', width: '90%', maxWidth: '400px', borderRadius: '24px', position: 'relative', maxHeight: '90vh', overflowY: 'auto' }}>
+        <button 
+          type="button" 
+          onClick={onClose} 
+          style={{ position: 'absolute', top: '16px', right: '16px', background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+        >
+          <X size={20} />
+        </button>
+        <h2 style={{ marginTop: 0, marginBottom: '24px', fontSize: '20px' }}>
+          {initialData ? 'Edit Transaction' : 'New Transaction'}
+        </h2>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>Type</label>
+            <select value={type} onChange={(e) => setType(e.target.value)} style={{ width: '100%', padding: '12px 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}>
+              <option value="buy">Buy</option>
+              <option value="sell">Sell</option>
+              <option value="deposit">Deposit (Cash In)</option>
+              <option value="withdrawal">Withdrawal (Cash Out)</option>
+              <option value="dividend">Dividend</option>
+              <option value="tax">Tax</option>
+            </select>
+          </div>
+
+          {(isTrade || type === 'dividend' || type === 'tax') && (
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>Asset</label>
+              <AssetSelect 
+                value={ticker ? { symbol: ticker, name: ticker } : null} 
+                onChange={(asset) => setTicker(asset.symbol)} 
+              />
+            </div>
+          )}
+
+          {isTrade && (
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>Shares</label>
+                <input type="number" step="any" value={shares} onChange={(e) => setShares(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} required={isTrade} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>Price</label>
+                <input type="number" step="any" value={price} onChange={(e) => setPrice(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} required={isTrade} />
+              </div>
+            </div>
+          )}
+
+          {(!isTrade) && (
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>Amount</label>
+              <input type="number" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} required />
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>Date</label>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} required />
+            </div>
+            {isTrade && (
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>Fees</label>
+                <input type="number" step="any" value={fees} onChange={(e) => setFees(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} />
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>Portfolio</label>
+            <select value={portfolio} onChange={(e) => setPortfolio(e.target.value)} style={{ width: '100%', padding: '12px 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}>
+              {portfolios.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+              {portfolios.length === 0 && <option value="Main">Main</option>}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>Note (Optional)</label>
+            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} />
+          </div>
+
+          <button type="submit" className="submit-btn bg-primary" style={{ marginTop: '8px' }}>
+            {initialData ? 'Save Changes' : 'Add Transaction'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

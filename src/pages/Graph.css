@@ -1,0 +1,723 @@
+.graph-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: 40px;
+}
+
+/* Header & Controls */
+.graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  height: 68px;
+  min-height: 68px;
+  padding: 14px 24px;
+  border-radius: 20px;
+  background: var(--bg-surface-elevated, rgba(30, 30, 40, 0.7));
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.graph-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Mode Pills & Controls */
+.control-pills-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.segmented-control {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 2px;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+.segmented-btn {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.segmented-btn.active {
+  background: var(--accent-color, #6366f1);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+}
+
+/* 1. Standalone Top Portfolio Value Pill / Card */
+.graph-value-card {
+  padding: 24px;
+  border-radius: 24px;
+  background: var(--bg-surface-elevated, rgba(30, 30, 40, 0.7));
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 20px;
+}
+
+.graph-value-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.graph-hero-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.graph-hero-value {
+  font-size: clamp(28px, 5vw, 38px);
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+}
+
+.graph-hero-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.graph-change-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.graph-change-badge.positive {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.graph-change-badge.negative {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.graph-perf-pills {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.graph-perf-pills .perf-pill {
+  min-width: 110px;
+  padding: 14px 22px;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  box-sizing: border-box;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  transition: all 0.2s ease;
+}
+
+.graph-perf-pills .perf-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.graph-perf-pills .perf-pill.positive {
+  color: #10b981;
+}
+
+.graph-perf-pills .perf-pill.negative {
+  color: #ef4444;
+}
+
+.graph-perf-pills .perf-pill.positive.active-selector {
+  border-color: #10b981;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.22);
+}
+
+.graph-perf-pills .perf-pill.negative.active-selector {
+  border-color: #ef4444;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.22);
+}
+
+.graph-perf-pills .perf-pill .perf-label {
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.graph-perf-pills .perf-pill .perf-value {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+/* 2. Dedicated Graph Chart Card */
+.graph-chart-card {
+  padding: 24px;
+  border-radius: 24px;
+  background: var(--bg-surface-elevated, rgba(30, 30, 40, 0.7));
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.graph-chart-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+/* Period Pills Selector */
+.period-pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 3px;
+  border-radius: 12px;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+.period-pill {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.period-pill.active {
+  background: var(--accent-color, #6366f1);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+}
+
+/* Mobile Period Select Dropdown */
+.period-select-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.period-select-dropdown {
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  height: 40px;
+  padding: 0 32px 0 14px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.period-select-dropdown option {
+  background: #181824;
+  color: #ffffff;
+}
+
+.period-select-wrapper .dropdown-arrow {
+  position: absolute;
+  right: 10px;
+  pointer-events: none;
+  color: var(--text-secondary);
+}
+
+/* Chart Canvas Container */
+.chart-container {
+  width: 100%;
+  height: 360px;
+  margin-top: 8px;
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  touch-action: pan-y !important;
+}
+
+.chart-container .recharts-wrapper,
+.chart-container .recharts-surface {
+  touch-action: pan-y !important;
+}
+
+/* Fixed Fullscreen Mobile Chart Overlay */
+.graph-chart-card.fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  z-index: 99999 !important;
+  background: var(--bg-primary, #0f0f17) !important;
+  border-radius: 0 !important;
+  border: none !important;
+  padding: 16px 16px 28px 16px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+}
+
+.graph-chart-card.fullscreen .chart-container {
+  flex: 1;
+  height: calc(100vh - 84px) !important;
+  margin-top: 12px;
+}
+
+/* Hide mobile bottom nav when chart is full screen */
+body:has(.graph-chart-card.fullscreen) .bottom-nav,
+body:has(.fullscreen) .bottom-nav {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Glassmorphism Custom Tooltip */
+.custom-chart-tooltip {
+  background: rgba(20, 20, 30, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  padding: 12px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.tooltip-date {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 4px;
+}
+
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.tooltip-label {
+  color: var(--text-secondary);
+}
+
+.tooltip-val {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.graph-mobile-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+@media (min-width: 769px) and (min-height: 501px) {
+  .mobile-only {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px), (max-height: 600px) and (orientation: landscape), (pointer: coarse) and (max-height: 600px) {
+  .desktop-only {
+    display: none !important;
+  }
+  .mobile-only {
+    display: flex !important;
+  }
+  .graph-value-card {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    gap: 12px;
+  }
+  .graph-perf-pills {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .graph-perf-pills .perf-pill {
+    min-width: 84px;
+    padding: 6px 12px;
+    border-radius: 12px;
+  }
+  .graph-perf-pills .perf-pill .perf-label {
+    font-size: 10px;
+  }
+  .graph-perf-pills .perf-pill .perf-value {
+    font-size: 13px;
+  }
+  .graph-chart-card {
+    padding: 14px 12px;
+    border-radius: 18px;
+  }
+  .graph-chart-controls {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .period-select-wrapper.mobile-only {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 105px;
+  }
+  .period-select-wrapper.mobile-only .unified-dropdown {
+    width: auto;
+    min-width: 105px;
+  }
+  .period-select-wrapper.mobile-only .dropdown-trigger {
+    width: auto;
+    min-width: 105px;
+    box-sizing: border-box;
+    justify-content: space-between;
+    padding: 0 10px;
+    height: 38px;
+    font-size: 13px;
+    font-weight: 600;
+    gap: 4px;
+    white-space: nowrap;
+  }
+  .graph-chart-controls .control-pills-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 1 auto;
+  }
+  .graph-chart-controls .segmented-control {
+    height: 38px;
+    padding: 2px;
+    flex: 0 1 auto;
+    display: flex;
+    width: auto;
+    min-width: 160px;
+    max-width: 210px;
+    box-sizing: border-box;
+  }
+  .graph-chart-controls .segmented-btn {
+    flex: 1;
+    padding: 0 8px;
+    font-size: 12px;
+    justify-content: center;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .expand-chart-btn {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+  .chart-container {
+    height: 280px;
+  }
+  .period-pills {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .period-pill {
+    flex: 1;
+    text-align: center;
+    padding: 6px 4px;
+  }
+  .graph-mobile-top-row .control-pills-row {
+    width: auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin-left: auto;
+    gap: 8px;
+  }
+}
+
+/* Dedicated Mobile Landscape Orientation Optimizations */
+@media (orientation: landscape) and (max-height: 550px) {
+  .graph-page {
+    gap: 12px;
+    padding-bottom: 20px;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .graph-value-card {
+    padding: 10px 12px;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .graph-hero-value {
+    font-size: 22px;
+  }
+  .graph-perf-pills .perf-pill {
+    padding: 4px 10px;
+    min-width: 76px;
+  }
+  .graph-chart-card {
+    padding: 12px 12px;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .graph-chart-controls {
+    gap: 12px;
+    flex-wrap: nowrap;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+  }
+  /* Show Time Selector as Pills Toggle in Landscape */
+  .period-pills {
+    display: flex !important;
+    align-items: center;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 3px;
+    border-radius: 12px;
+    height: 38px;
+    box-sizing: border-box;
+  }
+  .period-pill {
+    padding: 0 10px;
+    height: 32px;
+    border-radius: 9px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .period-pill.active {
+    background: var(--accent-color, #6366f1);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+  }
+  /* Hide Dropdown in Landscape */
+  .period-select-wrapper.mobile-only {
+    display: none !important;
+  }
+  .graph-chart-controls .control-pills-row {
+    flex: 0 0 auto;
+    gap: 8px;
+  }
+  .graph-chart-controls .segmented-control {
+    width: auto;
+    min-width: 160px;
+    max-width: 200px;
+    height: 38px;
+  }
+  .chart-container {
+    height: 210px !important;
+  }
+}
+
+/* Rotate Screen Overlay Prompt */
+.rotate-prompt-overlay {
+  position: absolute;
+  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000000;
+  background: rgba(10, 10, 18, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.rotate-prompt-card {
+  background: var(--bg-surface-elevated, rgba(30, 30, 42, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 28px;
+  padding: 32px 24px;
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6);
+  animation: promptFadeIn 0.3s ease-out;
+}
+
+.rotate-icon-wrapper {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-color, #8b5cf6);
+  background: rgba(139, 92, 246, 0.12);
+  border-radius: 50%;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  margin-bottom: 4px;
+}
+
+.phone-rotate-icon {
+  animation: rotatePhone 2.5s infinite ease-in-out;
+}
+
+.rotate-arrow-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: var(--accent-color, #8b5cf6);
+  color: #fff;
+  border-radius: 50%;
+  padding: 3px;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.5);
+}
+
+.rotate-prompt-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.rotate-prompt-desc {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.rotate-close-btn {
+  margin-top: 6px;
+  width: 100%;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.rotate-close-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+@keyframes rotatePhone {
+  0%, 15% { transform: rotate(0deg); }
+  50%, 65% { transform: rotate(90deg); }
+  90%, 100% { transform: rotate(0deg); }
+}
+
+@keyframes promptFadeIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Desktop: Stretch Graph Card to align bottom with Sidebar */
+@media (min-width: 769px) {
+  .graph-page {
+    min-height: calc(100vh - 40px);
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+  }
+  .graph-chart-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 480px;
+    margin-bottom: 0;
+  }
+  .chart-container {
+    flex: 1;
+    height: 100% !important;
+    min-height: 380px;
+  }
+}

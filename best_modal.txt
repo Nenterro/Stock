@@ -1,0 +1,281 @@
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  X, Calendar, ArrowDown, ArrowUp, Wallet, ArrowUpRight, 
+  Coins, Receipt, Tag, Briefcase, Search
+} from 'lucide-react';
+import AssetSelect from './AssetSelect';
+import { useTransactions } from '../context/TransactionContext';
+import './AddTransactionModal.css';
+
+const TX_TYPES = [
+  { id: 'BUY', label: 'Buy', icon: ArrowDown, color: '#EF5350', bg: 'rgba(239, 83, 80, 0.15)' },
+  { id: 'SELL', label: 'Sell', icon: ArrowUp, color: '#81C784', bg: 'rgba(129, 199, 132, 0.15)' },
+  { id: 'DIVIDEND', label: 'Dividend', icon: Coins, color: '#CE93D8', bg: 'rgba(206, 147, 216, 0.15)' },
+  { id: 'DEPOSIT', label: 'Deposit', icon: Wallet, color: '#64B5F6', bg: 'rgba(100, 181, 246, 0.15)' },
+  { id: 'WITHDRAW', label: 'Withdraw', icon: ArrowUpRight, color: '#FFB74D', bg: 'rgba(255, 183, 77, 0.15)' },
+  { id: 'TAX', label: 'Tax', icon: Receipt, color: '#90A4AE', bg: 'rgba(144, 164, 174, 0.15)' },
+];
+
+const slideVariants = {
+  enter: (direction) => ({
+    x: direction > 0 ? '100%' : '-100%',
+    opacity: 0,
+    position: 'relative'
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+    position: 'relative'
+  },
+  exit: (direction) => ({
+    x: direction > 0 ? '-100%' : '100%',
+    opacity: 0,
+    position: 'absolute',
+    top: 0, left: 0, right: 0
+  })
+};
+
+export default function AddTransactionModal({ isOpen, onClose }) {
+  const { addTransaction } = useTransactions();
+  
+  const [type, setType] = useState('BUY');
+  const [direction, setDirection] = useState(1);
+  const [asset, setAsset] = useState(null);
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [shares, setShares] = useState('');
+  const [price, setPrice] = useState('');
+  const [fees, setFees] = useState('');
+  const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState('USD');
+  const [portfolio, setPortfolio] = useState('Main');
+  const [activeField, setActiveField] = useState(null);
+
+  if (!isOpen) return null;
+
+  const isTradeType = type === 'BUY' || type === 'SELL';
+  const needsAsset = type !== 'DEPOSIT' && type !== 'WITHDRAW';
+  const activeTypeMeta = TX_TYPES.find(t => t.id === type);
+
+  const handleTypeChange = (newType) => {
+    const oldIndex = TX_TYPES.findIndex(t => t.id === type);
+    const newIndex = TX_TYPES.findIndex(t => t.id === newType);
+    setDirection(newIndex > oldIndex ? 1 : -1);
+    setType(newType);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (needsAsset && !asset) {
+      alert("Please select an asset.");
+      return;
+    }
+
+    const txData = {
+      type,
+      ticker: asset ? asset.symbol : 'CASH',
+      assetName: asset ? asset.name : 'Cash',
+      date,
+      currency,
+      portfolio,
+      exchangeRate: currency === 'USD' ? 278.0 : 1.0,
+    };
+
+    if (isTradeType) {
+      txData.shares = parseFloat(shares) || 0;
+      txData.price = parseFloat(price) || 0;
+      txData.fees = parseFloat(fees) || 0;
+    } else {
+      let rawAmount = parseFloat(amount) || 0;
+      if (type === 'WITHDRAW' || type === 'TAX') {
+        rawAmount = -Math.abs(rawAmount);
+      } else {
+        rawAmount = Math.abs(rawAmount);
+      }
+      txData.amount = rawAmount;
+    }
+
+    addTransaction(txData);
+    onClose();
+  };
+
+  let contentHeight = 0;
+  if (type === 'BUY' || type === 'SELL') {
+    contentHeight = 304; 
+  } else if (type === 'DIVIDEND' || type === 'TAX') {
+    contentHeight = 258; 
+  } else if (type === 'DEPOSIT' || type === 'WITHDRAW') {
+    contentHeight = 194; 
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <motion.div 
+        className="modal-content tx-form-modal" 
+        onClick={e => e.stopPropagation()}
+        initial={{ y: 50, opacity: 0, scale: 0.95 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 50, opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <div className="modal-header">
+          <h2>New Transaction</h2>
+          <button className="close-btn" type="button" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        <form className="tx-form" onSubmit={handleSubmit}>
+          {/* Type Selector */}
+          <div className="tx-type-selector">
+            {TX_TYPES.map(t => {
+              const isSelected = type === t.id;
+              return (
+                <button 
+                  key={t.id}
+                  type="button"
+                  className={`type-btn ${isSelected ? 'active' : ''}`}
+                  style={isSelected ? { '--active-bg': t.bg, '--active-color': t.color } : {}}
+                  onClick={() => handleTypeChange(t.id)}
+                >
+                  <t.icon size={14} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <motion.div 
+            className="dynamic-fields-wrapper"
+            animate={{ height: contentHeight }}
+            transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+            style={{ position: 'relative', overflow: 'visible' }}
+          >
+            <AnimatePresence initial={false} custom={direction} mode="popLayout">
+              <motion.div
+                key={type}
+                custom={direction}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ type: "tween", ease: "easeInOut", duration: 0.25 }}
+                className="dynamic-fields-content"
+                style={{ width: '100%' }}
+              >
+                {needsAsset && (
+                  <div className="form-row">
+                    <div className="form-group flex-2">
+                      <label>Asset</label>
+                      <div className="input-with-icon" onClick={() => setActiveField('asset')} style={{ cursor: 'pointer' }}>
+                        <Search size={18} className="input-icon" style={{ color: asset ? 'var(--text-primary)' : 'var(--text-secondary)' }} />
+                        <input 
+                          type="text" 
+                          placeholder="Search ticker or name..."
+                          value={asset ? `${asset.symbol} - ${asset.name}` : ''} 
+                          readOnly 
+                          style={{ cursor: 'pointer' }} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-row">
+                  <div className="form-group flex-2">
+                    <label>Date</label>
+                    <div className="input-with-icon">
+                      <Calendar size={18} className="input-icon" />
+                      <input type="date" value={date} onChange={e => setDate(e.target.value)} required />
+                    </div>
+                  </div>
+                  
+                  <div className="form-group flex-1">
+                    <label>Portfolio</label>
+                    <div className="input-with-icon">
+                      <Briefcase size={18} className="input-icon" />
+                      <select value={portfolio} onChange={e => setPortfolio(e.target.value)}>
+                        <option value="Main">Main</option>
+                        <option value="Trading">Trading</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-row">
+                   <div className="form-group flex-2">
+                      <label>Currency</label>
+                      <div className="currency-toggle">
+                        <div className={`curr-btn ${currency === 'PKR' ? 'active' : ''}`} onClick={() => setCurrency('PKR')}>PKR</div>
+                        <div className={`curr-btn ${currency === 'USD' ? 'active' : ''}`} onClick={() => setCurrency('USD')}>USD</div>
+                      </div>
+                   </div>
+                </div>
+
+                {isTradeType ? (
+                  <>
+                    <div className="form-row">
+                      <div className="form-group flex-1">
+                        <label>Shares</label>
+                        <div className="input-with-icon">
+                          <Tag size={18} className="input-icon" />
+                          <input type="number" step="any" min="0" value={shares} onChange={e => setShares(e.target.value)} required placeholder="0.0" />
+                        </div>
+                      </div>
+                      <div className="form-group flex-1">
+                        <label>Price</label>
+                        <div className="input-with-icon">
+                          <span className="input-icon">{currency === 'USD' ? '$' : 'Rs'}</span>
+                          <input type="number" step="any" min="0" value={price} onChange={e => setPrice(e.target.value)} required placeholder="0.0" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group flex-1">
+                        <label>Fees (Optional)</label>
+                        <div className="input-with-icon">
+                          <span className="input-icon">{currency === 'USD' ? '$' : 'Rs'}</span>
+                          <input type="number" step="any" min="0" value={fees} onChange={e => setFees(e.target.value)} placeholder="0.0" />
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="form-row">
+                    <div className="form-group flex-1">
+                      <label>Amount</label>
+                      <div className="input-with-icon">
+                        <span className="input-icon">{currency === 'USD' ? '$' : 'Rs'}</span>
+                        <input type="number" step="any" min="0" value={amount} onChange={e => setAmount(e.target.value)} required placeholder="0.0" />
+                      </div>
+                      <span className="hint">
+                        {(type === 'WITHDRAW' || type === 'TAX') 
+                          ? "Enter absolute amount — recorded as a deduction."
+                          : "Enter the amount received."}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </motion.div>
+
+          <div className="modal-actions">
+            <button type="button" className="cancel-btn" onClick={onClose}>Cancel</button>
+            <button type="submit" className="submit-btn bg-primary">
+              Add {activeTypeMeta?.label}
+            </button>
+          </div>
+        </form>
+
+        {activeField === 'asset' && (
+          <AssetSelect 
+            onClose={() => setActiveField(null)}
+            onSelect={(selectedAsset) => {
+              setAsset(selectedAsset);
+              setActiveField(null);
+            }}
+          />
+        )}
+      </motion.div>
+    </div>
+  );
+}

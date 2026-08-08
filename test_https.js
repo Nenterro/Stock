@@ -1,0 +1,1 @@
+const https=require("https"); https.get("https://open.er-api.com/v6/latest/USD", r=>console.log("ER-API", r.statusCode)).on("error", e=>console.error(e.message)); https.get("https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=1d", r=>console.log("YF", r.statusCode)).on("error", e=>console.error(e.message));

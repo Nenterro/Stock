@@ -1,0 +1,55 @@
+  // Calculate exact heights for smooth resizing animation
+  let contentHeight = 0;
+  if (type === 'BUY' || type === 'SELL') {
+    contentHeight = 394; // 5 rows + gaps
+  } else if (type === 'DIVIDEND' || type === 'TAX') {
+    contentHeight = 338; // 4 rows + gaps + hint
+  } else if (type === 'DEPOSIT' || type === 'WITHDRAW') {
+    contentHeight = 258; // 3 rows + gaps + hint
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <motion.div 
+        className="modal-content tx-form-modal" 
+        onClick={e => e.stopPropagation()}
+        initial={{ y: 50, opacity: 0, scale: 0.95 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 50, opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <div className="modal-header">
+          <h2>New Transaction</h2>
+          <button className="close-btn" type="button" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        <form className="tx-form" onSubmit={handleSubmit}>
+          {/* Type Selector */}
+          <div className="tx-type-selector">
+            {TX_TYPES.map(t => {
+              const isSelected = type === t.id;
+              return (
+                <button 
+                  key={t.id}
+                  type="button"
+                  className={`type-btn ${isSelected ? 'active' : ''}`}
+                  style={isSelected ? { '--active-bg': t.bg, '--active-color': t.color } : {}}
+                  onClick={() => handleTypeChange(t.id)}
+                >
+                  <t.icon size={14} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <motion.div 
+            className="dynamic-fields-wrapper"
+            animate={{ height: contentHeight }}
+            transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+            style={{ position: 'relative', overflow: 'visible' }}
+          >
+            <AnimatePresence initial={false} custom={direction} mode="popLayout">
+              <motion.div
+                key={type}
+                custom={direction}

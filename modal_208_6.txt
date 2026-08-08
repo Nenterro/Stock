@@ -1,0 +1,8 @@
+  let contentHeight = 0;
+  if (type === 'BUY' || type === 'SELL') {
+    contentHeight = 304; // 5 rows + gaps
+  } else if (type === 'DIVIDEND' || type === 'TAX') {
+    contentHeight = 258; // 4 rows + gaps + hint
+  } else if (type === 'DEPOSIT' || type === 'WITHDRAW') {
+    contentHeight = 194; // 3 rows + gaps + hint
+  }

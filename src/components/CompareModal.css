@@ -1,0 +1,196 @@
+.compare-modal {
+  background: var(--bg-surface-elevated, #181824);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  width: 90vw;
+  max-width: 480px;
+  padding: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.compare-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.compare-header h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  padding: 0;
+}
+
+.compare-search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.compare-search-bar .search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-secondary);
+}
+
+.compare-search-bar input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px 36px 10px 36px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.compare-search-bar input:focus {
+  border-color: var(--accent-color, #6366f1);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+
+.compare-body {
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-right: 4px;
+}
+
+.compare-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.bench-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bench-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bench-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.bench-card.selected {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.bench-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bench-symbol {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.bench-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.checkbox-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  transition: all 0.2s ease;
+}
+
+.checkbox-icon.checked {
+  background: var(--accent-color, #6366f1);
+  border-color: var(--accent-color, #6366f1);
+  color: #ffffff;
+}
+
+.loading-state, .empty-state {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.compare-footer {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.compare-footer .btn-secondary {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.compare-footer .btn-primary {
+  flex: 2;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--accent-color, #6366f1);
+  border: none;
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+}
