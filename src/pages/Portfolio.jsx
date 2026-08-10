@@ -228,12 +228,12 @@ export default function Portfolio() {
     };
   }, [filteredTransactions, livePrices, exchangeRates, displayCurrency, filterState]);
 
-    const { mwrPercent, mwrCumulative, twrPercent } = useMemo(() => {
+    const { mwrPercent, twrPercent } = useMemo(() => {
       const currentFxRate = exchangeRates?.PKR || 278.0;
       const mwr = calculateAllTimeMWR(filteredTransactions, totalMarketValue, displayCurrency, currentFxRate);
       const series = generatePortfolioTimeSeries(filteredTransactions, livePrices, displayCurrency, currentFxRate);
       const twr = series.length > 0 ? series[series.length - 1].twrPct : 0;
-      return { mwrPercent: mwr.annualized, mwrCumulative: mwr.cumulative, twrPercent: twr };
+      return { mwrPercent: mwr.cumulative, twrPercent: twr };
     }, [filteredTransactions, totalMarketValue, displayCurrency, exchangeRates, livePrices]);
 
   // Search filter
@@ -409,14 +409,8 @@ export default function Portfolio() {
             
             {/* Desktop: Performance Pills inside main pill below balance-amount */}
             <div className="performance-pills desktop-only">
-              <div className={`perf-pill ${mwrCumulative >= 0 ? 'positive' : 'negative'}`}>
-                <span className="perf-label">Cum. MWR</span>
-                <span className="perf-value">
-                  {mwrCumulative >= 0 ? '+' : ''}{mwrCumulative.toFixed(2)}%
-                </span>
-              </div>
               <div className={`perf-pill ${mwrPercent >= 0 ? 'positive' : 'negative'}`}>
-                <span className="perf-label">Ann. MWR</span>
+                <span className="perf-label">MWR</span>
                 <span className="perf-value">
                   {mwrPercent >= 0 ? '+' : ''}{mwrPercent.toFixed(2)}%
                 </span>
@@ -433,14 +427,8 @@ export default function Portfolio() {
 
         {/* Mobile: Performance Pills outside and below main hero pill */}
         <div className="performance-pills mobile-only">
-          <div className={`perf-pill glass-panel ${mwrCumulative >= 0 ? 'positive' : 'negative'}`}>
-            <span className="perf-label">Cum. MWR</span>
-            <span className="perf-value">
-              {mwrCumulative >= 0 ? '+' : ''}{mwrCumulative.toFixed(2)}%
-            </span>
-          </div>
           <div className={`perf-pill glass-panel ${mwrPercent >= 0 ? 'positive' : 'negative'}`}>
-            <span className="perf-label">Ann. MWR</span>
+            <span className="perf-label">MWR</span>
             <span className="perf-value">
               {mwrPercent >= 0 ? '+' : ''}{mwrPercent.toFixed(2)}%
             </span>

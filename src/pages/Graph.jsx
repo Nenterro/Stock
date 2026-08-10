@@ -161,7 +161,7 @@ export default function Graph() {
       periodGain = (currentValue * (periodReturnPct / 100.0));
     } else if (chartMode === 'mwr') {
       const mwrVal = calculateAllTimeMWR(transactions, currentValue, displayCurrency, currentFxRate);
-      periodReturnPct = mwrVal;
+      periodReturnPct = mwrVal.cumulative;
       periodGain = endPt.pnl;
     }
 
@@ -274,7 +274,8 @@ export default function Graph() {
   const allTimeTwr = endPoint ? endPoint.twrPct : 0;
   
   const allTimeMwr = useMemo(() => {
-    return calculateAllTimeMWR(filteredTransactions, totalPortfolioValue, displayCurrency, currentFxRate);
+    const res = calculateAllTimeMWR(filteredTransactions, totalPortfolioValue, displayCurrency, currentFxRate);
+    return res.cumulative;
   }, [filteredTransactions, totalPortfolioValue, displayCurrency, currentFxRate]);
 
   const activeReturnPct = chartMode === 'value' 
