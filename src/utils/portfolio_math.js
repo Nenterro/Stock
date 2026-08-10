@@ -79,18 +79,19 @@ export function calculateXIRR(cashFlows) {
       if (cf.amount > 0) totalIn += cf.amount;
       else totalOut += Math.abs(cf.amount);
     });
-    if (totalIn === 0) return 0.0;
-    return ((totalOut - totalIn) / totalIn) * 100.0;
+    if (totalIn === 0) return { annualized: 0.0, cumulative: 0.0 };
+    const ret = ((totalOut - totalIn) / totalIn) * 100.0;
+    return { annualized: ret, cumulative: ret };
   }
 
-  // If period < 1 year, convert annualized rate to unannualized cumulative return factor
-  // to avoid astronomical values (e.g. 10^82%) when gaining large amounts in a few days
-  if (totalYears < 1.0) {
-    const cumulativeReturn = (Math.pow(1.0 + bestRate, totalYears) - 1.0) * 100.0;
-    return cumulativeReturn;
-  }
+  let annualized = bestRate * 100.0;
+  let cumulative = (Math.pow(1.0 + bestRate, totalYears) - 1.0) * 100.0;
 
-  return bestRate * 100.0;
+  // Return both so the UI can choose what to display
+  return {
+    annualized,
+    cumulative
+  };
 }
 
 /**
@@ -101,7 +102,7 @@ export function calculateXIRR(cashFlows) {
  * - The terminal current value represents money OUT (negative) at today's date
  */
 export function calculateAllTimeMWR(transactions, currentPortfolioValue, displayCurrency, currentFxRate) {
-  if (transactions.length === 0) return 0.0;
+  if (transactions.length === 0) return { annualized: 0, cumulative: 0 };
 
   const cashFlows = [];
   const today = new Date();
@@ -143,13 +144,16 @@ export function calculateAllTimeMWR(transactions, currentPortfolioValue, display
     }
   });
 
-  // Terminal cash flow (value of remaining portfolio today) is treated as an OUTFLOW (negative)
   if (currentPortfolioValue > 0) {
     cashFlows.push({
       date: today,
       amount: -currentPortfolioValue
     });
   }
+
+  console.log("=== MWR DEBUG: CASH FLOWS ===");
+  console.log("Terminal Value used:", currentPortfolioValue);
+  console.table(cashFlows);
 
   return calculateXIRR(cashFlows);
 }
@@ -171,7 +175,7 @@ export function calculateAllTimeTWR(transactions, currentPortfolioValue, display
   if (sorted.length === 0) return 0.0;
 
   let cumulativeTwr = 1.0;
-  let prevValue = 0.0;
+  let bv = 0.0; // Beginning value of the current sub-period
   
   // Track held shares per ticker to estimate market value at any point in time
   const heldShares = {};
@@ -197,17 +201,21 @@ export function calculateAllTimeTWR(transactions, currentPortfolioValue, display
       lastKnownPrice[ticker] = priceDisplay;
     }
 
-    // Estimate portfolio value just *before* this transaction occurs
-    let portfolioValueBeforeTx = 0.0;
+    // 1. Estimate portfolio value just *before* this transaction occurs (End Value of sub-period)
+    let ev = 0.0;
     Object.keys(heldShares).forEach(t => {
       const s = heldShares[t] || 0;
       if (s > 0) {
-        portfolioValueBeforeTx += s * (lastKnownPrice[t] || 0);
+        ev += s * (lastKnownPrice[t] || 0);
       }
     });
 
-    // Calculate external flow
-    let externalFlowDisplay = 0;
+    // 2. Calculate sub-period return
+    if (bv > 0.01) {
+      cumulativeTwr *= (ev / bv);
+    }
+
+    // 3. Calculate external cash flow in display currency
     let amountNative = 0;
     
     if (type === 'buy') amountNative = (shares * price) + fees;
@@ -221,22 +229,14 @@ export function calculateAllTimeTWR(transactions, currentPortfolioValue, display
       amountDisplay = amountNative * txFx;
     }
 
-    if (type === 'buy' || type === 'tax') externalFlowDisplay = amountDisplay; // Inflow
-    else if (type === 'sell' || type === 'dividend') externalFlowDisplay = -amountDisplay; // Outflow
+    let cf = 0;
+    if (type === 'buy' || type === 'tax') cf = amountDisplay; // Inflow
+    else if (type === 'sell' || type === 'dividend') cf = -amountDisplay; // Outflow
 
-    // TWR sub-period calculation
-    if (portfolioValueBeforeTx > 0) {
-      const denom = prevValue + externalFlowDisplay;
-      if (denom > 0.01) {
-        const r = portfolioValueBeforeTx / denom;
-        cumulativeTwr *= r;
-      }
-      prevValue = portfolioValueBeforeTx;
-    } else if (externalFlowDisplay > 0 && prevValue === 0) {
-      prevValue = externalFlowDisplay;
-    }
+    // 4. Set Beginning Value (BV) for the *next* sub-period
+    bv = ev + cf;
 
-    // Update holdings state *after* the transaction
+    // 5. Update holdings state *after* the transaction
     if (type === 'buy') {
       heldShares[ticker] = (heldShares[ticker] || 0) + shares;
     } else if (type === 'sell') {
@@ -246,12 +246,8 @@ export function calculateAllTimeTWR(transactions, currentPortfolioValue, display
   });
 
   // Final sub-period to today's actual value
-  if (currentPortfolioValue > 0) {
-    const denom = prevValue;
-    if (denom > 0.01) {
-      const r = currentPortfolioValue / denom;
-      cumulativeTwr *= r;
-    }
+  if (currentPortfolioValue > 0 && bv > 0.01) {
+    cumulativeTwr *= (currentPortfolioValue / bv);
   }
 
   return (cumulativeTwr - 1.0) * 100.0;
