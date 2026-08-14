@@ -101,13 +101,15 @@ export function calculateXIRR(cashFlows) {
  * - Sells / Dividends represent money OUT (negative)
  * - The terminal current value represents money OUT (negative) at today's date
  */
-export function calculateAllTimeMWR(transactions, currentPortfolioValue, displayCurrency, currentFxRate) {
+export function calculateAllTimeMWR(transactions, currentPortfolioValue, displayCurrency, currentFxRate, asOfDate = new Date()) {
   if (transactions.length === 0) return { annualized: 0, cumulative: 0 };
 
   const cashFlows = [];
-  const today = new Date();
+  
+  // Filter transactions up to asOfDate
+  const pastTransactions = transactions.filter(tx => new Date(tx.date) <= asOfDate);
 
-  transactions.forEach(tx => {
+  pastTransactions.forEach(tx => {
     const type = (tx.type || '').toLowerCase();
     
     // Pure Stock Portfolio Model: Only evaluate stock trades (buys, sells, dividends, taxes)
@@ -146,14 +148,10 @@ export function calculateAllTimeMWR(transactions, currentPortfolioValue, display
 
   if (currentPortfolioValue > 0) {
     cashFlows.push({
-      date: today,
+      date: asOfDate,
       amount: -currentPortfolioValue
     });
   }
-
-  console.log("=== MWR DEBUG: CASH FLOWS ===");
-  console.log("Terminal Value used:", currentPortfolioValue);
-  console.table(cashFlows);
 
   return calculateXIRR(cashFlows);
 }
@@ -385,12 +383,18 @@ export function generatePortfolioTimeSeries(transactions, livePrices = {}, displ
 
     const twrPct = (cumulativeTwr - 1.0) * 100.0;
 
+    // Calculate MWR as of this day `d`
+    const pastTx = sorted.slice(0, txIndex);
+    const mwrResult = calculateAllTimeMWR(pastTx, portfolioValue, displayCurrency, currentFxRate, d);
+    const mwrPct = mwrResult.cumulative;
+
     series.push({
       date: dayStr,
       dateFormatted: new Date(dayStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }),
       value: portfolioValue,
       costBasis: runningCostBasis,
       twrPct: twrPct,
+      mwrPct: mwrPct,
       pnl: portfolioValue - runningCostBasis
     });
   }

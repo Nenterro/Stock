@@ -209,9 +209,15 @@ export default function Graph() {
             <span className="tooltip-val">{getCurrencySymbol(displayCurrency)}{formatCurrency(data.costBasis)}</span>
           </div>
           <div className="tooltip-row">
-            <span className="tooltip-label">TWR Return:</span>
+            <span className="tooltip-label">TWR:</span>
             <span className="tooltip-val" style={{ color: data.twrPct >= 0 ? '#10b981' : '#ef4444' }}>
-              {data.twrPct >= 0 ? '+' : ''}{data.twrPct.toFixed(2)}%
+              {data.twrPct >= 0 ? '+' : ''}{data.twrPct?.toFixed(2)}%
+            </span>
+          </div>
+          <div className="tooltip-row">
+            <span className="tooltip-label">Cum. MWR:</span>
+            <span className="tooltip-val" style={{ color: data.mwrPct >= 0 ? '#10b981' : '#ef4444' }}>
+              {data.mwrPct >= 0 ? '+' : ''}{data.mwrPct?.toFixed(2)}%
             </span>
           </div>
         </div>
@@ -471,7 +477,7 @@ export default function Graph() {
                 <Tooltip content={<CustomTooltip />} />
                 <Area 
                   type="monotone" 
-                  dataKey={chartMode === 'value' ? 'value' : 'twrPct'}
+                  dataKey={chartMode === 'value' ? 'value' : (metricSelector === 'mwr' ? 'mwrPct' : 'twrPct')}
                   stroke={chartColor}
                   strokeWidth={2.5}
                   fillOpacity={1}
