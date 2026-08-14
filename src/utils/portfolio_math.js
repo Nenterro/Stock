@@ -271,21 +271,108 @@ export function generatePortfolioTimeSeries(transactions, livePrices = {}, displ
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const series = [];
-  const heldShares = {};
-  const lastKnownPrice = {};
-
-  let cumulativeTwr = 1.0;
-  let prevValue = 0.0;
-  let runningCostBasis = 0.0;
-  let txIndex = 0;
-
   const getLocalDayStr = (dateObj) => {
     const y = dateObj.getFullYear();
     const m = String(dateObj.getMonth() + 1).padStart(2, '0');
     const day = String(dateObj.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
   };
+
+  // 1. Pre-compute a piecewise price history map for smooth interpolation
+  const priceHistory = {};
+  
+  sorted.forEach(tx => {
+    const ticker = (tx.asset || tx.ticker || '').toUpperCase();
+    const price = Number(tx.price) || 0;
+    const type = (tx.type || '').toLowerCase();
+    
+    // Only buy and sell have reliable asset prices in the CSV
+    if (price > 0 && (type === 'buy' || type === 'sell')) {
+      if (!priceHistory[ticker]) priceHistory[ticker] = [];
+      const txFx = Number(tx.fxRateOnDate) || currentFxRate;
+      const assetCurrency = tx.currency || 'USD';
+      
+      let priceDisplay = price;
+      if (displayCurrency === 'USD' && assetCurrency === 'PKR') priceDisplay = price / txFx;
+      else if (displayCurrency === 'PKR' && assetCurrency === 'USD') priceDisplay = price * txFx;
+      
+      const txDateStr = (tx.date || '').split('T')[0];
+      const existing = priceHistory[ticker].find(p => p.dateStr === txDateStr);
+      if (existing) {
+        existing.price = priceDisplay;
+      } else {
+        priceHistory[ticker].push({
+          dateStr: txDateStr,
+          time: new Date(txDateStr).getTime(),
+          price: priceDisplay
+        });
+      }
+    }
+  });
+
+  // Add today's live prices to the map and sort
+  const todayTime = today.getTime();
+  const todayStr = getLocalDayStr(today);
+  
+  Object.keys(priceHistory).forEach(ticker => {
+    let currentLive = 0;
+    if (livePrices[ticker]?.price) {
+      const lp = livePrices[ticker].price;
+      const currency = livePrices[ticker].currency || 'USD';
+      if (displayCurrency === 'USD' && currency === 'PKR') currentLive = lp / currentFxRate;
+      else if (displayCurrency === 'PKR' && currency === 'USD') currentLive = lp * currentFxRate;
+      else currentLive = lp;
+    }
+    
+    if (currentLive > 0) {
+      const existing = priceHistory[ticker].find(p => p.dateStr === todayStr);
+      if (existing) {
+        existing.price = currentLive;
+      } else {
+        priceHistory[ticker].push({
+          dateStr: todayStr,
+          time: todayTime,
+          price: currentLive
+        });
+      }
+    }
+    
+    priceHistory[ticker].sort((a, b) => a.time - b.time);
+  });
+
+  const getInterpolatedPrice = (ticker, targetTime) => {
+    const history = priceHistory[ticker];
+    if (!history || history.length === 0) return 0;
+    
+    if (history.length === 1) return history[0].price;
+    if (targetTime <= history[0].time) return history[0].price;
+    if (targetTime >= history[history.length - 1].time) return history[history.length - 1].price;
+    
+    let p1 = history[0];
+    let p2 = history[history.length - 1];
+    
+    for (let i = 0; i < history.length - 1; i++) {
+      if (targetTime >= history[i].time && targetTime <= history[i+1].time) {
+        p1 = history[i];
+        p2 = history[i+1];
+        break;
+      }
+    }
+    
+    const timeSpan = p2.time - p1.time;
+    if (timeSpan === 0) return p2.price;
+    
+    const progress = (targetTime - p1.time) / timeSpan;
+    return p1.price + (p2.price - p1.price) * progress;
+  };
+
+  const series = [];
+  const heldShares = {};
+  
+  let cumulativeTwr = 1.0;
+  let prevValue = 0.0;
+  let runningCostBasis = 0.0;
+  let txIndex = 0;
 
   // Loop day-by-day from first tx date to today
   for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
@@ -307,10 +394,7 @@ export function generatePortfolioTimeSeries(transactions, livePrices = {}, displ
       const assetCurrency = tx.currency || 'USD';
 
       if (price > 0) {
-        let priceDisplay = price;
-        if (displayCurrency === 'USD' && assetCurrency === 'PKR') priceDisplay = price / txFx;
-        else if (displayCurrency === 'PKR' && assetCurrency === 'USD') priceDisplay = price * txFx;
-        lastKnownPrice[ticker] = priceDisplay;
+        // Price tracking is now handled by priceHistory map
       }
 
       let amountNative = 0;
@@ -339,32 +423,12 @@ export function generatePortfolioTimeSeries(transactions, livePrices = {}, displ
 
     // Calculate total portfolio market value on this day
     let portfolioValue = 0.0;
-    const totalTimeSpan = Math.max(1, today.getTime() - startDate.getTime());
-    const currentElapsed = Math.min(totalTimeSpan, Math.max(0, d.getTime() - startDate.getTime()));
-    const timeProgress = currentElapsed / totalTimeSpan;
+    const currentTime = d.getTime();
 
     Object.keys(heldShares).forEach(t => {
       const qty = heldShares[t] || 0;
       if (qty > 0) {
-        let price = lastKnownPrice[t] || 0;
-
-        // Fetch live price for ticker if available
-        let currentLive = price;
-        if (livePrices[t]?.price) {
-          const lp = livePrices[t].price;
-          const currency = livePrices[t].currency || 'USD';
-          if (displayCurrency === 'USD' && currency === 'PKR') currentLive = lp / currentFxRate;
-          else if (displayCurrency === 'PKR' && currency === 'USD') currentLive = lp * currentFxRate;
-          else currentLive = lp;
-        }
-
-        // Interpolate smoothly between buy price and live price across days
-        if (currentLive > 0 && price > 0) {
-          price = price + (currentLive - price) * timeProgress;
-        } else if (currentLive > 0) {
-          price = currentLive;
-        }
-
+        const price = getInterpolatedPrice(t, currentTime);
         portfolioValue += qty * price;
       }
     });
