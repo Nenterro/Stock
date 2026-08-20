@@ -41,8 +41,11 @@ export async function connectPocketBase() {
     }
   }
 
+  // Nothing answered. Leave a sane default on the client for later retries,
+  // but report the failure rather than returning a URL that does not work -
+  // callers were treating any return value as "connected".
   pb.baseUrl = 'https://huz-budget.duckdns.org:8888';
-  return pb.baseUrl;
+  return null;
 }
 
 // ─── Settings ID Mapping ───

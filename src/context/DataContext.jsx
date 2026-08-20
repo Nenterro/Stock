@@ -42,6 +42,17 @@ export function DataProvider({ children }) {
   // has encrypted data. Until then we cannot tell "no PIN set up yet" from
   // "PIN exists, we just have not read the settings yet".
   const [securityResolved, setSecurityResolved] = useState(false);
+
+  // What the app is actually doing about syncing. The backend status dot
+  // reports the *price* backend, which is a different service entirely - a
+  // green dot there says nothing about whether transactions reach PocketBase.
+  //   synced     - authenticated and pushing/pulling
+  //   guest      - local-only session, sync deliberately off
+  //   signed-out - no PocketBase session (a PWA can have its own storage,
+  //                so a browser login does not always carry over)
+  //   offline    - no PocketBase server reachable
+  //   locked     - encrypted account waiting on its PIN
+  const [syncStatus, setSyncStatus] = useState({ mode: 'pending', lastSyncAt: null, error: null });
   const [pinInput, setPinInput] = useState('');
 
   const { isE2eeEnabled, hasPromptedE2ee, setE2EE, dismissE2EEPrompt, reloadSettings } = useSecuritySettings();
@@ -133,7 +144,19 @@ export function DataProvider({ children }) {
       setIsLoading(false);
 
       const activeUrl = await connectPocketBase();
-      if (!activeUrl || !pb.authStore.isValid) return;
+      if (!activeUrl) {
+        if (isMounted) setSyncStatus({ mode: 'offline', lastSyncAt: null, error: 'No PocketBase server reachable' });
+        return;
+      }
+      if (!pb.authStore.isValid) {
+        // Guest sessions are local by design; anything else means the session
+        // did not carry into this context and data will not leave the device.
+        if (isMounted) {
+          const guest = localStorage.getItem('STOCK_GUEST_SESSION') === '1';
+          setSyncStatus({ mode: guest ? 'guest' : 'signed-out', lastSyncAt: null, error: null });
+        }
+        return;
+      }
 
       await syncSettings();
 
@@ -184,16 +207,19 @@ export function DataProvider({ children }) {
           setUnlocked(true);
           await syncAll();
           await loadData();
+          if (isMounted) setSyncStatus({ mode: 'synced', lastSyncAt: Date.now(), error: null });
           unsub = setupRealtimeSync((collection) => {
             loadData();
             if (collection === 'stock_settings' && reloadSettings) reloadSettings();
           });
         } else if (isMounted) {
           setNeedsPin(true);
+          setSyncStatus({ mode: 'locked', lastSyncAt: null, error: null });
         }
       } else {
         await syncAll();
         await loadData();
+        if (isMounted) setSyncStatus({ mode: 'synced', lastSyncAt: Date.now(), error: null });
         unsub = setupRealtimeSync((collection) => {
           loadData();
           if (collection === 'stock_settings' && reloadSettings) reloadSettings();
@@ -215,9 +241,14 @@ export function DataProvider({ children }) {
   // background and reloads from the local store when it settles; realtime
   // updates from other devices arrive through setupRealtimeSync regardless.
   const syncInBackground = useCallback(() => {
+    if (!pb.authStore.isValid) return; // guest / signed out: nothing to push
     syncAll()
       .then(() => loadData())
-      .catch((err) => console.warn('Background sync failed:', err));
+      .then(() => setSyncStatus((s) => ({ ...s, mode: 'synced', lastSyncAt: Date.now(), error: null })))
+      .catch((err) => {
+        console.warn('Background sync failed:', err);
+        setSyncStatus((s) => ({ ...s, error: err.message }));
+      });
   }, [loadData]);
 
   const addTransaction = async (tx) => {
@@ -470,7 +501,7 @@ export function DataProvider({ children }) {
 
   return (
     <DataContext.Provider value={{ 
-      transactions, portfolios, exchangeRates, setExchangeRates, livePrices, historicalPrices, fxSeries, historyLoading, backendStatus, isLoading, loadData,
+      transactions, portfolios, exchangeRates, setExchangeRates, livePrices, historicalPrices, fxSeries, historyLoading, backendStatus, syncStatus, isLoading, loadData,
       addTransaction, updateTransaction, deleteTransaction, saveTransactionsBatch,
       savePortfolio: (item) => updateDataItem(db.portfoliosStore, item, setPortfolios),
       deletePortfolio: (id) => deleteDataItem(db.portfoliosStore, id, setPortfolios),

@@ -460,3 +460,26 @@
   z-index: 60;
 }
 .fab-container { position: relative; }
+
+/* Sync indicator, shown beside the price-backend dot. A guest or signed-out
+   session is amber rather than green: data is safe locally but is not leaving
+   the device, which is easy to miss otherwise. */
+.status-dot.sync-online {
+  background-color: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.7);
+}
+
+.status-dot.sync-warn {
+  background-color: #eab308;
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.7);
+}
+
+.status-dot.sync-offline {
+  background-color: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.7);
+}
+
+.status-dot.sync-pending {
+  background-color: #64748b;
+  box-shadow: none;
+}

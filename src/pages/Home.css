@@ -1,3 +1,7 @@
+/* Home is a placeholder for now; its former overview styles were either
+ * moved to the page that uses them (the portfolio hero, now in
+ * Portfolio.css) or are kept here for whenever the overview is rebuilt.
+ */
 .home-dashboard {
   display: flex;
   flex-direction: column;

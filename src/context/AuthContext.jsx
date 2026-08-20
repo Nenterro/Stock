@@ -62,11 +62,15 @@ export function AuthProvider({ children }) {
   const loginAsGuest = async () => {
     // Clear any previous local data for the guest session
     await localforage.clear();
+    // Recorded so the rest of the app can tell "local by choice" apart from
+    // "session did not carry over", which look identical otherwise.
+    localStorage.setItem('STOCK_GUEST_SESSION', '1');
     setUser({ id: 'guest', email: 'Guest User', isGuest: true });
   };
 
   const logout = async () => {
     pb.authStore.clear();
+    localStorage.removeItem('STOCK_GUEST_SESSION');
     setUser(null);
     // Wipe local databases to prevent data leakage between users
     try {
