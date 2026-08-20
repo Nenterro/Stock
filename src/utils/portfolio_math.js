@@ -1,467 +1,633 @@
 /**
  * Portfolio Math Utilities
- * Calculates Money-Weighted Return (MWR / XIRR) and Time-Weighted Return (TWR)
+ *
+ * Models a pure stock portfolio (no cash account): every BUY/TAX is new money
+ * entering, every SELL/DIVIDEND is money leaving, and portfolio value is the
+ * market value of the shares held.
+ *
+ * Everything is keyed on 'YYYY-MM-DD' calendar day strings and compared through
+ * UTC-midnight timestamps, so the results do not shift with the viewer's
+ * timezone.
  */
+
+const MS_PER_DAY = 86400000;
+const DAYS_PER_YEAR = 365;
+
+/* -------------------------------------------------------------------------- */
+/* Date helpers                                                               */
+/* -------------------------------------------------------------------------- */
+
+/** Extract the calendar day ('YYYY-MM-DD') from an ISO string or Date. */
+export function toDayStr(value) {
+  if (!value) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const str = String(value);
+  // Already a plain date, or an ISO timestamp we want the date part of.
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  const parsed = new Date(str);
+  return Number.isNaN(parsed.getTime()) ? null : toDayStr(parsed);
+}
+
+/** UTC-midnight epoch ms for a 'YYYY-MM-DD' string. Timezone independent. */
+export function dayStrToMs(dayStr) {
+  if (!dayStr) return NaN;
+  const [y, m, d] = dayStr.split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+export function msToDayStr(ms) {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function todayDayStr() {
+  return toDayStr(new Date());
+}
+
+/* -------------------------------------------------------------------------- */
+/* XIRR / Money-Weighted Return                                               */
+/* -------------------------------------------------------------------------- */
 
 /**
- * calculateXIRR (Money-Weighted Return)
- * Input: Array of objects { amount: number, date: Date }
- * amount > 0 means money entering the portfolio (invested capital / buys).
- * amount < 0 means money leaving the portfolio (returns / sells / dividends).
- * Note: 'amount' must be in the same base currency.
- * Returns: Annualized percentage (e.g. 15.5 for 15.5%)
+ * Solve for the money-weighted return of a set of dated cash flows.
+ *
+ * Rather than solving for an annualised rate `r` (which explodes to absurd
+ * magnitudes over short horizons and has to be clamped, producing the spikes
+ * this chart used to show), we solve directly for `u`, the growth factor over
+ * the *whole* period:
+ *
+ *     NPV(u) = SUM_i  amount_i * u^(-w_i) = 0,   w_i = (t_i - t_0) / (t_n - t_0)
+ *
+ * `w_i` is each flow's position in [0, 1] across the period, so `u` stays a
+ * small, well-conditioned number. The cumulative return is exactly `u - 1`, and
+ * the annualised rate is recovered as `u^(1/years) - 1`.
+ *
+ * Sign convention: amount > 0 is money entering the portfolio (buys, taxes),
+ * amount < 0 is money leaving it (sells, dividends, and the terminal value).
+ *
+ * @param {{amount:number, date:Date|string}[]} cashFlows
+ * @param {number|null} warmStart previous solution, used as the initial guess
+ * @returns {{annualized:number, cumulative:number, growth:number}}
  */
-export function calculateXIRR(cashFlows) {
-  if (!cashFlows || cashFlows.length < 2) return 0.0;
+export function calculateXIRR(cashFlows, warmStart = null) {
+  const empty = { annualized: 0, cumulative: 0, growth: 1 };
+  if (!cashFlows || cashFlows.length < 2) return empty;
 
-  // Ensure there is at least one positive and one negative flow
-  const hasPositive = cashFlows.some(cf => cf.amount > 0);
-  const hasNegative = cashFlows.some(cf => cf.amount < 0);
-  if (!hasPositive || !hasNegative) return 0.0;
+  // Normalise to (weight, amount) pairs.
+  const flows = cashFlows
+    .map(cf => {
+      const ms = cf.date instanceof Date ? cf.date.getTime() : dayStrToMs(toDayStr(cf.date));
+      return { ms, amount: Number(cf.amount) || 0 };
+    })
+    .filter(f => Number.isFinite(f.ms) && f.amount !== 0)
+    .sort((a, b) => a.ms - b.ms);
 
-  // Sort by date ascending
-  const sortedFlows = [...cashFlows].sort((a, b) => a.date - b.date);
-  const startDate = sortedFlows[0].date;
-  const endDate = sortedFlows[sortedFlows.length - 1].date;
+  if (flows.length < 2) return empty;
 
-  const totalDays = Math.max(0.001, (endDate - startDate) / (1000 * 60 * 60 * 24));
-  const totalYears = totalDays / 365.0;
+  const hasPositive = flows.some(f => f.amount > 0);
+  const hasNegative = flows.some(f => f.amount < 0);
+  if (!hasPositive || !hasNegative) return empty;
 
-  const npv = (rate) => {
-    let sum = 0.0;
-    for (const flow of sortedFlows) {
-      const days = Math.max(0, (flow.date - startDate) / (1000 * 60 * 60 * 24));
-      const years = days / 365.0;
-      const base = 1.0 + rate;
-      if (base <= 0) return Number.POSITIVE_INFINITY;
-      sum += flow.amount / Math.pow(base, years);
+  const startMs = flows[0].ms;
+  const endMs = flows[flows.length - 1].ms;
+  const spanMs = endMs - startMs;
+
+  // All flows on the same day: no time value, fall back to a simple ratio.
+  if (spanMs <= 0) {
+    let inflow = 0;
+    let outflow = 0;
+    flows.forEach(f => (f.amount > 0 ? (inflow += f.amount) : (outflow -= f.amount)));
+    if (inflow <= 0) return empty;
+    const growth = outflow / inflow;
+    return { annualized: (growth - 1) * 100, cumulative: (growth - 1) * 100, growth };
+  }
+
+  const totalYears = spanMs / MS_PER_DAY / DAYS_PER_YEAR;
+  const weights = flows.map(f => (f.ms - startMs) / spanMs);
+  const amounts = flows.map(f => f.amount);
+  const n = flows.length;
+
+  const npv = (u) => {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += amounts[i] * Math.pow(u, -weights[i]);
+    return sum;
+  };
+
+  const dNpv = (u) => {
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      if (weights[i] === 0) continue;
+      sum += -weights[i] * amounts[i] * Math.pow(u, -weights[i] - 1);
     }
     return sum;
   };
 
-  const dNpv = (rate) => {
-    let sum = 0.0;
-    for (const flow of sortedFlows) {
-      const days = Math.max(0, (flow.date - startDate) / (1000 * 60 * 60 * 24));
-      const years = days / 365.0;
-      const base = 1.0 + rate;
-      if (base <= 0) return 0;
-      sum -= years * flow.amount / Math.pow(base, years + 1.0);
-    }
-    return sum;
-  };
+  const U_MIN = 1e-6;
+  const U_MAX = 1e6;
 
-  let bestRate = null;
-  const seeds = [0.1, 0.5, -0.1, 1.0, 5.0, 20.0];
-  
-  for (const seed of seeds) {
-    let rate = seed;
+  // 1. Safeguarded Newton from the warm start (previous day's answer). With a
+  //    good seed this converges in two or three iterations.
+  let u = warmStart && warmStart > U_MIN && warmStart < U_MAX ? warmStart : 1.1;
+  let solved = false;
+  for (let i = 0; i < 40; i++) {
+    const y = npv(u);
+    if (Math.abs(y) < 1e-9) {
+      solved = true;
+      break;
+    }
+    const dy = dNpv(u);
+    if (!Number.isFinite(dy) || Math.abs(dy) < 1e-14) break;
+    let next = u - y / dy;
+    if (!Number.isFinite(next)) break;
+    // Keep the iterate positive and inside the bracket.
+    if (next <= U_MIN) next = (u + U_MIN) / 2;
+    if (next >= U_MAX) next = (u + U_MAX) / 2;
+    const converged = Math.abs(next - u) < 1e-12 * Math.max(1, u);
+    u = next;
+    if (converged) {
+      solved = true;
+      break;
+    }
+  }
+
+  // 2. Bisection fallback. NPV(u) runs from -inf (u -> 0) to the sum of the
+  //    t=0 flows (u -> inf), so a sign change is guaranteed to exist.
+  if (!solved || !Number.isFinite(u)) {
+    let lo = U_MIN;
+    let hi = U_MAX;
+    const fLo = npv(lo);
+    const fHi = npv(hi);
+    if (!Number.isFinite(fLo) || !Number.isFinite(fHi) || fLo * fHi > 0) return empty;
     for (let i = 0; i < 200; i++) {
-      const y = npv(rate);
-      const dy = dNpv(rate);
-      if (Math.abs(dy) < 1e-14) break;
-      const step = y / dy;
-      rate -= step;
-      if (rate <= -0.9999) rate = -0.9999;
-      if (Math.abs(step) < 1e-7) {
-        bestRate = rate;
-        break;
-      }
+      const mid = Math.sqrt(lo * hi); // geometric midpoint - u spans orders of magnitude
+      const fMid = npv(mid);
+      if (!Number.isFinite(fMid)) break;
+      if (fLo * fMid <= 0) hi = mid;
+      else lo = mid;
+      if (hi / lo < 1 + 1e-12) break;
     }
-    if (bestRate !== null) break;
+    u = Math.sqrt(lo * hi);
   }
 
-  // Fallback: simple return on invested capital if solver failed
-  if (bestRate === null) {
-    let totalIn = 0;
-    let totalOut = 0;
-    sortedFlows.forEach(cf => {
-      if (cf.amount > 0) totalIn += cf.amount;
-      else totalOut += Math.abs(cf.amount);
-    });
-    if (totalIn === 0) return { annualized: 0.0, cumulative: 0.0 };
-    const ret = ((totalOut - totalIn) / totalIn) * 100.0;
-    return { annualized: ret, cumulative: ret };
-  }
+  if (!Number.isFinite(u) || u <= 0) return empty;
 
-  let annualized = bestRate * 100.0;
-  let cumulative = (Math.pow(1.0 + bestRate, totalYears) - 1.0) * 100.0;
+  const cumulative = (u - 1) * 100;
+  const annualized = totalYears > 0.003 ? (Math.pow(u, 1 / totalYears) - 1) * 100 : cumulative;
 
-  // Return both so the UI can choose what to display
+  return { annualized, cumulative, growth: u };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Currency helpers                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Build a USD->PKR rate lookup that carries the last known rate forward across
+ * weekends and holidays, and backfills before the series starts.
+ */
+export function buildFxLookup(fxSeries, fallbackRate = 278.0) {
+  const entries = Object.entries(fxSeries || {})
+    .map(([dayStr, rate]) => ({ ms: dayStrToMs(dayStr), rate: Number(rate) }))
+    .filter(e => Number.isFinite(e.ms) && e.rate > 0)
+    .sort((a, b) => a.ms - b.ms);
+
+  if (entries.length === 0) return () => fallbackRate;
+
+  let cursor = 0;
+  let lastQueryMs = -Infinity;
+
+  return (ms) => {
+    // Callers walk forward in time; reset the cursor if they don't.
+    if (ms < lastQueryMs) cursor = 0;
+    lastQueryMs = ms;
+    while (cursor + 1 < entries.length && entries[cursor + 1].ms <= ms) cursor++;
+    if (ms < entries[0].ms) return entries[0].rate;
+    return entries[cursor].rate;
+  };
+}
+
+/** Convert between USD and PKR at a given USD->PKR rate. */
+export function convertAmount(amount, fromCurrency, toCurrency, usdToPkr) {
+  const from = (fromCurrency || 'USD').toUpperCase();
+  const to = (toCurrency || 'USD').toUpperCase();
+  if (from === to) return amount;
+  const rate = usdToPkr > 0 ? usdToPkr : 278.0;
+  if (from === 'PKR' && to === 'USD') return amount / rate;
+  if (from === 'USD' && to === 'PKR') return amount * rate;
+  return amount;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Transaction normalisation                                                  */
+/* -------------------------------------------------------------------------- */
+
+const TRADE_TYPES = ['buy', 'sell', 'dividend', 'tax'];
+
+function tickerOf(tx) {
+  return (tx.ticker || tx.asset || '').toUpperCase().trim();
+}
+
+/**
+ * Reduce a raw transaction to the fields the maths needs, in the asset's own
+ * (native) currency. `amount` is always the positive magnitude - direction is
+ * carried by `type`.
+ */
+function normalizeTransaction(tx, fallbackFxRate) {
+  const type = (tx.type || '').toLowerCase();
+  if (!TRADE_TYPES.includes(type)) return null;
+
+  const dayStr = toDayStr(tx.date);
+  if (!dayStr) return null;
+
+  const shares = Number(tx.shares) || Number(tx.quantity) || 0;
+  const price = Number(tx.price) || 0;
+  const fees = Number(tx.fees) || 0;
+
+  let amountNative;
+  if (type === 'buy') amountNative = shares * price + fees;
+  else if (type === 'sell') amountNative = shares * price - fees;
+  // DIVIDEND is stored positive and TAX negative by the entry form; both are
+  // magnitudes here, the direction comes from the type.
+  else amountNative = Math.abs(Number(tx.amount) || 0);
+
   return {
-    annualized,
-    cumulative
+    type,
+    dayStr,
+    ms: dayStrToMs(dayStr),
+    ticker: tickerOf(tx),
+    shares,
+    priceNative: price,
+    feesNative: fees,
+    amountNative,
+    currency: (tx.currency || '').toUpperCase() || null,
+    // Rate captured when the transaction was entered; used when we have no
+    // historical FX series to consult.
+    fxRateOnDate: Number(tx.fxRateOnDate) || fallbackFxRate
   };
 }
 
 /**
- * calculateAllTimeMWR
- * Helper that builds the cashflow array for the portfolio.
- * - Buys represent money IN (positive)
- * - Sells / Dividends represent money OUT (negative)
- * - The terminal current value represents money OUT (negative) at today's date
+ * Work out each ticker's native trading currency from the best source
+ * available, falling back to the PSX/PKR naming heuristic only as a last
+ * resort.
  */
-export function calculateAllTimeMWR(transactions, currentPortfolioValue, displayCurrency, currentFxRate, asOfDate = new Date()) {
-  if (transactions.length === 0) return { annualized: 0, cumulative: 0 };
+function resolveCurrencies(normalized, livePrices, historicalPrices) {
+  const currencies = {};
+  normalized.forEach(tx => {
+    if (!tx.ticker || currencies[tx.ticker]) return;
+    const hist = historicalPrices?.[tx.ticker];
+    const live = livePrices?.[tx.ticker];
+    currencies[tx.ticker] =
+      (hist && !Array.isArray(hist) && hist.currency) ||
+      (live && live.currency) ||
+      tx.currency ||
+      (/\.(KA|PSX)$/.test(tx.ticker) ? 'PKR' : 'USD');
+    currencies[tx.ticker] = currencies[tx.ticker].toUpperCase();
+  });
+  return currencies;
+}
 
-  const cashFlows = [];
-  
-  // Filter transactions up to asOfDate
-  const pastTransactions = transactions.filter(tx => new Date(tx.date) <= asOfDate);
+/* -------------------------------------------------------------------------- */
+/* Price tape                                                                 */
+/* -------------------------------------------------------------------------- */
 
-  pastTransactions.forEach(tx => {
-    const type = (tx.type || '').toLowerCase();
-    
-    // Pure Stock Portfolio Model: Only evaluate stock trades (buys, sells, dividends, taxes)
-    if (['buy', 'sell', 'dividend', 'tax'].includes(type)) {
-      const isOutflow = (type === 'sell' || type === 'dividend'); // money returning from stock to user
-      const isInflow = (type === 'buy' || type === 'tax'); // money deployed into stock by user
+/**
+ * A per-ticker sorted tape of observed native-currency closing prices, built
+ * from the backend's daily history plus the prices on the user's own trades.
+ *
+ * Lookups carry the last close forward (so weekends and holidays hold their
+ * value instead of collapsing to zero) and back-fill the earliest known price
+ * for days before the history begins. There is no interpolation: a price is
+ * only ever a real observed close.
+ */
+function buildPriceTapes(normalized, livePrices, historicalPrices, currencies) {
+  const tapes = {};
 
-      const shares = Number(tx.shares) || Number(tx.quantity) || 0;
-      const price = Number(tx.price) || 0;
-      const fees = Number(tx.fees) || 0;
+  const push = (ticker, dayStr, price) => {
+    if (!ticker || !(price > 0)) return;
+    if (!tapes[ticker]) tapes[ticker] = { points: new Map() };
+    // Backend history wins over a trade price for the same day, and it is
+    // merged second, so a plain set is the right precedence.
+    tapes[ticker].points.set(dayStr, price);
+  };
 
-      let amountNative = 0;
-      if (type === 'buy') amountNative = (shares * price) + fees;
-      else if (type === 'sell') amountNative = (shares * price) - fees;
-      else if (type === 'dividend' || type === 'tax') amountNative = Math.abs(Number(tx.amount) || 0);
-
-      // Convert to display currency using historical FX
-      const txFx = Number(tx.fxRateOnDate) || currentFxRate;
-      const assetCurrency = tx.currency || 'USD';
-
-      let amountDisplay = amountNative;
-      if (displayCurrency === 'USD' && assetCurrency === 'PKR') {
-        amountDisplay = amountNative / txFx;
-      } else if (displayCurrency === 'PKR' && assetCurrency === 'USD') {
-        amountDisplay = amountNative * txFx;
-      }
-
-      if (amountDisplay > 0) {
-        cashFlows.push({
-          date: new Date(tx.date),
-          amount: isOutflow ? -amountDisplay : amountDisplay
-        });
-      }
+  // 1. Prices observed on the user's own buy/sell tickets.
+  normalized.forEach(tx => {
+    if ((tx.type === 'buy' || tx.type === 'sell') && tx.priceNative > 0) {
+      push(tx.ticker, tx.dayStr, tx.priceNative);
     }
   });
 
-  if (currentPortfolioValue > 0) {
-    cashFlows.push({
-      date: asOfDate,
-      amount: -currentPortfolioValue
+  // 2. Real daily closes from the backend (authoritative).
+  Object.entries(historicalPrices || {}).forEach(([ticker, entry]) => {
+    const key = ticker.toUpperCase();
+    const history = Array.isArray(entry) ? entry : entry?.history;
+    if (!Array.isArray(history)) return;
+    history.forEach(hp => {
+      const dayStr = toDayStr(hp.date);
+      const price = Number(hp.price);
+      if (dayStr && price > 0) push(key, dayStr, price);
     });
+  });
+
+  // 3. Today's live quote, so the final point reflects the real-time price.
+  const today = todayDayStr();
+  Object.entries(livePrices || {}).forEach(([ticker, quote]) => {
+    const key = ticker.toUpperCase();
+    const price = typeof quote === 'object' ? Number(quote?.price) : Number(quote);
+    if (price > 0 && tapes[key]) push(key, today, price);
+  });
+
+  // Freeze into sorted arrays with a forward-walking cursor.
+  Object.keys(tapes).forEach(ticker => {
+    const sorted = [...tapes[ticker].points.entries()]
+      .map(([dayStr, price]) => ({ ms: dayStrToMs(dayStr), price }))
+      .sort((a, b) => a.ms - b.ms);
+    tapes[ticker] = { entries: sorted, cursor: 0, lastMs: -Infinity, currency: currencies[ticker] || 'USD' };
+  });
+
+  return tapes;
+}
+
+/** Last observed close at or before `ms`, or the earliest known close. */
+function priceAsOf(tape, ms) {
+  if (!tape || tape.entries.length === 0) return 0;
+  if (ms < tape.lastMs) tape.cursor = 0;
+  tape.lastMs = ms;
+  const { entries } = tape;
+  while (tape.cursor + 1 < entries.length && entries[tape.cursor + 1].ms <= ms) tape.cursor++;
+  if (ms < entries[0].ms) return entries[0].price;
+  return entries[tape.cursor].price;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Public API                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Money-weighted (XIRR) return of the whole portfolio as of `asOfDate`.
+ *
+ * @returns {{annualized:number, cumulative:number, growth:number}}
+ */
+export function calculateAllTimeMWR(
+  transactions,
+  currentPortfolioValue,
+  displayCurrency = 'USD',
+  currentFxRate = 278.0,
+  asOfDate = new Date(),
+  fxSeries = null
+) {
+  if (!transactions || transactions.length === 0) return { annualized: 0, cumulative: 0, growth: 1 };
+
+  const asOfDayStr = toDayStr(asOfDate) || todayDayStr();
+  const asOfMs = dayStrToMs(asOfDayStr);
+  const fxAt = buildFxLookup(fxSeries, currentFxRate);
+
+  const normalized = transactions
+    .map(tx => normalizeTransaction(tx, currentFxRate))
+    .filter(tx => tx && tx.ms <= asOfMs)
+    .sort((a, b) => a.ms - b.ms);
+
+  if (normalized.length === 0) return { annualized: 0, cumulative: 0, growth: 1 };
+
+  const currencies = resolveCurrencies(normalized, {}, {});
+
+  const cashFlows = normalized
+    .map(tx => {
+      const nativeCurrency = currencies[tx.ticker] || tx.currency || 'USD';
+      const rate = fxSeries ? fxAt(tx.ms) : tx.fxRateOnDate;
+      const amount = convertAmount(tx.amountNative, nativeCurrency, displayCurrency, rate);
+      if (!(amount > 0)) return null;
+      // Buys and taxes are capital going in; sells and dividends come back out.
+      const isInflow = tx.type === 'buy' || tx.type === 'tax';
+      return { date: tx.dayStr, amount: isInflow ? amount : -amount };
+    })
+    .filter(Boolean);
+
+  if (currentPortfolioValue > 0) {
+    cashFlows.push({ date: asOfDayStr, amount: -currentPortfolioValue });
   }
 
   return calculateXIRR(cashFlows);
 }
 
 /**
- * calculateAllTimeTWR
- * Time-Weighted Return evaluates sub-periods between cash flows.
- * Since we don't have historical prices, we use a modified approach tracking the
- * cumulative net invested capital and market value at the time of each transaction.
+ * Build the daily portfolio time series that the graph renders.
+ *
+ * Each point carries the market value, cost basis, unrealised/realised P&L and
+ * both return measures as of that calendar day:
+ *
+ *   - `twrPct`  time-weighted return, chain-linked daily as
+ *               (endValue - netExternalFlow) / previousValue, so deposits and
+ *               withdrawals do not register as performance.
+ *   - `mwrPct`  cumulative money-weighted return (XIRR) if the portfolio were
+ *               liquidated that day.
+ *
+ * @param {Array}  transactions
+ * @param {Object} livePrices        { TICKER: { price, currency } }
+ * @param {Object} historicalPrices  { TICKER: { currency, history: [{date, price}] } }
+ * @param {string} displayCurrency   'USD' | 'PKR'
+ * @param {number} currentFxRate     current USD->PKR, used as a fallback
+ * @param {Object} fxSeries          { 'YYYY-MM-DD': usdToPkr } historical rates
  */
-export function calculateAllTimeTWR(transactions, currentPortfolioValue, displayCurrency, currentFxRate) {
-  if (transactions.length === 0) return 0.0;
-
-  // Sort transactions chronologically
-  const sorted = [...transactions]
-    .filter(tx => ['buy', 'sell', 'dividend', 'tax'].includes((tx.type || '').toLowerCase()))
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-  if (sorted.length === 0) return 0.0;
-
-  let cumulativeTwr = 1.0;
-  let bv = 0.0; // Beginning value of the current sub-period
-  
-  // Track held shares per ticker to estimate market value at any point in time
-  const heldShares = {};
-  const lastKnownPrice = {};
-
-  sorted.forEach(tx => {
-    const type = (tx.type || '').toLowerCase();
-    const ticker = (tx.asset || tx.ticker || '').toUpperCase();
-    const shares = Number(tx.shares) || Number(tx.quantity) || 0;
-    const price = Number(tx.price) || 0;
-    const fees = Number(tx.fees) || 0;
-    const txFx = Number(tx.fxRateOnDate) || currentFxRate;
-    const assetCurrency = tx.currency || 'USD';
-
-    // Update last known price if valid
-    if (price > 0) {
-      let priceDisplay = price;
-      if (displayCurrency === 'USD' && assetCurrency === 'PKR') {
-        priceDisplay = price / txFx;
-      } else if (displayCurrency === 'PKR' && assetCurrency === 'USD') {
-        priceDisplay = price * txFx;
-      }
-      lastKnownPrice[ticker] = priceDisplay;
-    }
-
-    // 1. Estimate portfolio value just *before* this transaction occurs (End Value of sub-period)
-    let ev = 0.0;
-    Object.keys(heldShares).forEach(t => {
-      const s = heldShares[t] || 0;
-      if (s > 0) {
-        ev += s * (lastKnownPrice[t] || 0);
-      }
-    });
-
-    // 2. Calculate sub-period return
-    if (bv > 0.01) {
-      cumulativeTwr *= (ev / bv);
-    }
-
-    // 3. Calculate external cash flow in display currency
-    let amountNative = 0;
-    
-    if (type === 'buy') amountNative = (shares * price) + fees;
-    else if (type === 'sell') amountNative = (shares * price) - fees;
-    else if (type === 'dividend' || type === 'tax') amountNative = Number(tx.amount) || 0;
-
-    let amountDisplay = amountNative;
-    if (displayCurrency === 'USD' && assetCurrency === 'PKR') {
-      amountDisplay = amountNative / txFx;
-    } else if (displayCurrency === 'PKR' && assetCurrency === 'USD') {
-      amountDisplay = amountNative * txFx;
-    }
-
-    let cf = 0;
-    if (type === 'buy' || type === 'tax') cf = amountDisplay; // Inflow
-    else if (type === 'sell' || type === 'dividend') cf = -amountDisplay; // Outflow
-
-    // 4. Set Beginning Value (BV) for the *next* sub-period
-    bv = ev + cf;
-
-    // 5. Update holdings state *after* the transaction
-    if (type === 'buy') {
-      heldShares[ticker] = (heldShares[ticker] || 0) + shares;
-    } else if (type === 'sell') {
-      heldShares[ticker] = (heldShares[ticker] || 0) - shares;
-      if (heldShares[ticker] < 0.0001) heldShares[ticker] = 0;
-    }
-  });
-
-  // Final sub-period to today's actual value
-  if (currentPortfolioValue > 0 && bv > 0.01) {
-    cumulativeTwr *= (currentPortfolioValue / bv);
-  }
-
-  return (cumulativeTwr - 1.0) * 100.0;
-}
-
-/**
- * generatePortfolioTimeSeries
- * Builds a daily time-series array of portfolio performance points for graphing.
- */
-export function generatePortfolioTimeSeries(transactions, livePrices = {}, displayCurrency = 'USD', currentFxRate = 278.0) {
+export function generatePortfolioTimeSeries(
+  transactions,
+  livePrices = {},
+  historicalPrices = {},
+  displayCurrency = 'USD',
+  currentFxRate = 278.0,
+  fxSeries = null
+) {
   if (!transactions || transactions.length === 0) return [];
 
-  const sorted = [...transactions]
-    .filter(tx => ['buy', 'sell', 'dividend', 'tax'].includes((tx.type || '').toLowerCase()))
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  const normalized = transactions
+    .map(tx => normalizeTransaction(tx, currentFxRate))
+    .filter(Boolean)
+    .sort((a, b) => a.ms - b.ms);
 
-  if (sorted.length === 0) return [];
+  if (normalized.length === 0) return [];
 
-  const firstTxDateStr = (sorted[0].date || '').split('T')[0];
-  const [startY, startM, startD] = firstTxDateStr.split('-').map(Number);
-  const startDate = new Date(startY, startM - 1, startD);
+  const currencies = resolveCurrencies(normalized, livePrices, historicalPrices);
+  const tapes = buildPriceTapes(normalized, livePrices, historicalPrices, currencies);
+  const fxAt = buildFxLookup(fxSeries, currentFxRate);
+  const haveFxSeries = Boolean(fxSeries && Object.keys(fxSeries).length > 0);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const startMs = normalized[0].ms;
+  const endMs = Math.max(startMs, dayStrToMs(todayDayStr()));
 
-  const getLocalDayStr = (dateObj) => {
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
-
-  // 1. Pre-compute a piecewise price history map for smooth interpolation
-  const priceHistory = {};
-  
-  sorted.forEach(tx => {
-    const ticker = (tx.asset || tx.ticker || '').toUpperCase();
-    const price = Number(tx.price) || 0;
-    const type = (tx.type || '').toLowerCase();
-    
-    // Only buy and sell have reliable asset prices in the CSV
-    if (price > 0 && (type === 'buy' || type === 'sell')) {
-      if (!priceHistory[ticker]) priceHistory[ticker] = [];
-      const txFx = Number(tx.fxRateOnDate) || currentFxRate;
-      const assetCurrency = tx.currency || 'USD';
-      
-      let priceDisplay = price;
-      if (displayCurrency === 'USD' && assetCurrency === 'PKR') priceDisplay = price / txFx;
-      else if (displayCurrency === 'PKR' && assetCurrency === 'USD') priceDisplay = price * txFx;
-      
-      const txDateStr = (tx.date || '').split('T')[0];
-      const existing = priceHistory[ticker].find(p => p.dateStr === txDateStr);
-      if (existing) {
-        existing.price = priceDisplay;
-      } else {
-        priceHistory[ticker].push({
-          dateStr: txDateStr,
-          time: new Date(txDateStr).getTime(),
-          price: priceDisplay
-        });
-      }
-    }
-  });
-
-  // Add today's live prices to the map and sort
-  const todayTime = today.getTime();
-  const todayStr = getLocalDayStr(today);
-  
-  Object.keys(priceHistory).forEach(ticker => {
-    let currentLive = 0;
-    if (livePrices[ticker]?.price) {
-      const lp = livePrices[ticker].price;
-      const currency = livePrices[ticker].currency || 'USD';
-      if (displayCurrency === 'USD' && currency === 'PKR') currentLive = lp / currentFxRate;
-      else if (displayCurrency === 'PKR' && currency === 'USD') currentLive = lp * currentFxRate;
-      else currentLive = lp;
-    }
-    
-    if (currentLive > 0) {
-      const existing = priceHistory[ticker].find(p => p.dateStr === todayStr);
-      if (existing) {
-        existing.price = currentLive;
-      } else {
-        priceHistory[ticker].push({
-          dateStr: todayStr,
-          time: todayTime,
-          price: currentLive
-        });
-      }
-    }
-    
-    priceHistory[ticker].sort((a, b) => a.time - b.time);
-  });
-
-  const getInterpolatedPrice = (ticker, targetTime) => {
-    const history = priceHistory[ticker];
-    if (!history || history.length === 0) return 0;
-    
-    if (history.length === 1) return history[0].price;
-    if (targetTime <= history[0].time) return history[0].price;
-    if (targetTime >= history[history.length - 1].time) return history[history.length - 1].price;
-    
-    let p1 = history[0];
-    let p2 = history[history.length - 1];
-    
-    for (let i = 0; i < history.length - 1; i++) {
-      if (targetTime >= history[i].time && targetTime <= history[i+1].time) {
-        p1 = history[i];
-        p2 = history[i+1];
-        break;
-      }
-    }
-    
-    const timeSpan = p2.time - p1.time;
-    if (timeSpan === 0) return p2.price;
-    
-    const progress = (targetTime - p1.time) / timeSpan;
-    return p1.price + (p2.price - p1.price) * progress;
-  };
-
-  const series = [];
-  const heldShares = {};
-  
+  // Rolling portfolio state.
+  const heldShares = {};      // ticker -> share count
+  const costDisplay = {};     // ticker -> book cost in display currency
+  let realizedPnl = 0;
   let cumulativeTwr = 1.0;
-  let prevValue = 0.0;
-  let runningCostBasis = 0.0;
+  let prevValue = 0;
   let txIndex = 0;
 
-  // Loop day-by-day from first tx date to today
-  for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
-    const dayStr = getLocalDayStr(d);
-    let externalFlowDisplay = 0;
+  // Money-weighted flows accumulate as we walk forward; the solver is warm
+  // started from the previous day so each day costs only a few iterations.
+  const mwrFlows = [];
+  let mwrWarmStart = null;
 
-    // Process all transactions occurring on this day
-    while (txIndex < sorted.length) {
-      const txDateStr = (sorted[txIndex].date || '').split('T')[0];
-      if (txDateStr !== dayStr) break;
+  const series = [];
+  const dateFormatter = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: '2-digit',
+    timeZone: 'UTC'
+  });
 
-      const tx = sorted[txIndex++];
-      const type = (tx.type || '').toLowerCase();
-      const ticker = (tx.asset || tx.ticker || '').toUpperCase();
-      const shares = Number(tx.shares) || Number(tx.quantity) || 0;
-      const price = Number(tx.price) || 0;
-      const fees = Number(tx.fees) || 0;
-      const txFx = Number(tx.fxRateOnDate) || currentFxRate;
-      const assetCurrency = tx.currency || 'USD';
+  for (let ms = startMs; ms <= endMs; ms += MS_PER_DAY) {
+    const dayStr = msToDayStr(ms);
+    const fxRate = fxAt(ms);
 
-      if (price > 0) {
-        // Price tracking is now handled by priceHistory map
-      }
+    // --- 1. Apply every transaction dated on or before this day ------------
+    let externalFlow = 0; // display currency, + = capital in, - = capital out
 
-      let amountNative = 0;
-      if (type === 'buy') amountNative = (shares * price) + fees;
-      else if (type === 'sell') amountNative = (shares * price) - fees;
-      else if (type === 'dividend' || type === 'tax') amountNative = Number(tx.amount) || 0;
+    while (txIndex < normalized.length && normalized[txIndex].ms <= ms) {
+      const tx = normalized[txIndex++];
+      const nativeCurrency = currencies[tx.ticker] || tx.currency || 'USD';
+      // Prefer the rate that actually applied on the trade date.
+      const txRate = haveFxSeries ? fxAt(tx.ms) : tx.fxRateOnDate;
+      const amount = convertAmount(tx.amountNative, nativeCurrency, displayCurrency, txRate);
 
-      let amountDisplay = amountNative;
-      if (displayCurrency === 'USD' && assetCurrency === 'PKR') amountDisplay = amountNative / txFx;
-      else if (displayCurrency === 'PKR' && assetCurrency === 'USD') amountDisplay = amountNative * txFx;
-
-      if (type === 'buy' || type === 'tax') {
-        externalFlowDisplay += amountDisplay;
-        runningCostBasis += amountDisplay;
-        heldShares[ticker] = (heldShares[ticker] || 0) + shares;
-      } else if (type === 'sell') {
-        externalFlowDisplay -= amountDisplay;
-        runningCostBasis = Math.max(0, runningCostBasis - amountDisplay);
-        heldShares[ticker] = (heldShares[ticker] || 0) - shares;
-        if (heldShares[ticker] < 0.0001) heldShares[ticker] = 0;
-      } else if (type === 'dividend') {
-        externalFlowDisplay -= amountDisplay;
-        runningCostBasis = Math.max(0, runningCostBasis - amountDisplay);
+      if (tx.type === 'buy') {
+        heldShares[tx.ticker] = (heldShares[tx.ticker] || 0) + tx.shares;
+        costDisplay[tx.ticker] = (costDisplay[tx.ticker] || 0) + amount;
+        externalFlow += amount;
+        mwrFlows.push({ date: tx.dayStr, amount });
+      } else if (tx.type === 'sell') {
+        const held = heldShares[tx.ticker] || 0;
+        // Average-cost basis: relieve cost in proportion to shares sold.
+        const soldFraction = held > 0 ? Math.min(1, tx.shares / held) : 0;
+        const costRemoved = (costDisplay[tx.ticker] || 0) * soldFraction;
+        costDisplay[tx.ticker] = (costDisplay[tx.ticker] || 0) - costRemoved;
+        heldShares[tx.ticker] = Math.max(0, held - tx.shares);
+        if (heldShares[tx.ticker] < 1e-8) {
+          heldShares[tx.ticker] = 0;
+          costDisplay[tx.ticker] = 0;
+        }
+        realizedPnl += amount - costRemoved;
+        externalFlow -= amount;
+        mwrFlows.push({ date: tx.dayStr, amount: -amount });
+      } else if (tx.type === 'dividend') {
+        // Income taken out of the portfolio; it is a return, not a cost change.
+        realizedPnl += amount;
+        externalFlow -= amount;
+        mwrFlows.push({ date: tx.dayStr, amount: -amount });
+      } else if (tx.type === 'tax') {
+        realizedPnl -= amount;
+        externalFlow += amount;
+        mwrFlows.push({ date: tx.dayStr, amount });
       }
     }
 
-    // Calculate total portfolio market value on this day
-    let portfolioValue = 0.0;
-    const currentTime = d.getTime();
+    // --- 2. Value the holdings at this day's closes ------------------------
+    let marketValue = 0;
+    let costBasis = 0;
+    let holdsUnpricedShares = false;
 
-    Object.keys(heldShares).forEach(t => {
-      const qty = heldShares[t] || 0;
-      if (qty > 0) {
-        const price = getInterpolatedPrice(t, currentTime);
-        portfolioValue += qty * price;
-      }
-    });
+    for (const ticker of Object.keys(heldShares)) {
+      const qty = heldShares[ticker];
+      if (!(qty > 0)) continue;
+      costBasis += costDisplay[ticker] || 0;
 
-    // Sub-period TWR linking
-    if (portfolioValue > 0) {
-      const denom = prevValue + externalFlowDisplay;
-      if (denom > 0.01) {
-        const r = portfolioValue / denom;
-        cumulativeTwr *= r;
+      const tape = tapes[ticker];
+      const nativePrice = priceAsOf(tape, ms);
+      if (!(nativePrice > 0)) {
+        holdsUnpricedShares = true;
+        continue;
       }
-      prevValue = portfolioValue;
-    } else if (externalFlowDisplay > 0 && prevValue === 0) {
-      prevValue = externalFlowDisplay;
+      marketValue += qty * convertAmount(nativePrice, currencies[ticker] || 'USD', displayCurrency, fxRate);
     }
 
-    const twrPct = (cumulativeTwr - 1.0) * 100.0;
+    // A price gap would otherwise read as the position going to zero. Hold the
+    // previous valuation flat instead of inventing a crash.
+    if (holdsUnpricedShares && marketValue <= 0 && prevValue > 0) {
+      marketValue = prevValue + externalFlow;
+    }
 
-    // Calculate MWR as of this day `d`
-    const pastTx = sorted.slice(0, txIndex);
-    const mwrResult = calculateAllTimeMWR(pastTx, portfolioValue, displayCurrency, currentFxRate, d);
-    const mwrPct = mwrResult.cumulative;
+    // --- 3. Time-weighted return ------------------------------------------
+    // Standard daily chain link: strip out the money that arrived today so only
+    // market movement is counted as performance.
+    if (prevValue > 0.01) {
+      const factor = (marketValue - externalFlow) / prevValue;
+      if (Number.isFinite(factor) && factor > 0) cumulativeTwr *= factor;
+    }
+    prevValue = marketValue;
+
+    // --- 4. Money-weighted return -----------------------------------------
+    let mwrPct = 0;
+    if (mwrFlows.length > 0 && marketValue > 0) {
+      const flows = mwrFlows.concat([{ date: dayStr, amount: -marketValue }]);
+      const result = calculateXIRR(flows, mwrWarmStart);
+      if (result.growth > 0) mwrWarmStart = result.growth;
+      mwrPct = result.cumulative;
+    }
 
     series.push({
       date: dayStr,
-      dateFormatted: new Date(dayStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }),
-      value: portfolioValue,
-      costBasis: runningCostBasis,
-      twrPct: twrPct,
-      mwrPct: mwrPct,
-      pnl: portfolioValue - runningCostBasis
+      dateFormatted: dateFormatter.format(new Date(ms)),
+      value: marketValue,
+      costBasis,
+      unrealizedPnl: marketValue - costBasis,
+      realizedPnl,
+      pnl: marketValue - costBasis + realizedPnl,
+      twrFactor: cumulativeTwr,
+      twrPct: (cumulativeTwr - 1) * 100,
+      mwrPct
     });
   }
 
   return series;
+}
+
+/**
+ * All-time time-weighted return, derived from the same daily series the graph
+ * uses so the header and the chart can never disagree.
+ */
+export function calculateAllTimeTWR(
+  transactions,
+  livePrices = {},
+  historicalPrices = {},
+  displayCurrency = 'USD',
+  currentFxRate = 278.0,
+  fxSeries = null
+) {
+  const series = generatePortfolioTimeSeries(
+    transactions,
+    livePrices,
+    historicalPrices,
+    displayCurrency,
+    currentFxRate,
+    fxSeries
+  );
+  return series.length > 0 ? series[series.length - 1].twrPct : 0;
+}
+
+/**
+ * Re-base a slice of the daily series onto its own starting point, so that a
+ * 1M / 3M / YTD / 1Y window reports the return earned *within* that window
+ * rather than the all-time figure.
+ */
+export function rebaseSeries(series) {
+  if (!series || series.length === 0) return [];
+
+  const first = series[0];
+  const baseTwr = first.twrFactor > 0 ? first.twrFactor : 1;
+  // MWR is not chain-linkable, so re-derive the window's growth from the ratio
+  // of cumulative growth factors - an approximation, but a consistent one.
+  const baseMwrGrowth = 1 + (first.mwrPct || 0) / 100;
+
+  return series.map(pt => {
+    const twrPct = (pt.twrFactor / baseTwr - 1) * 100;
+    const mwrGrowth = 1 + (pt.mwrPct || 0) / 100;
+    const mwrPct = baseMwrGrowth > 0 ? (mwrGrowth / baseMwrGrowth - 1) * 100 : pt.mwrPct;
+    return { ...pt, twrPct, mwrPct };
+  });
 }

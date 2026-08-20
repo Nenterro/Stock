@@ -290,7 +290,7 @@
 
 .bg-primary { 
   background: var(--accent-color); 
-  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.4); 
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4); 
 }
 
 /* --- Popped Field Overlay --- */
@@ -375,18 +375,47 @@
   text-align: left;
 }
 
-.popped-item:hover {
+.popped-item:hover,
+.popped-item.is-active {
   background: rgba(255, 255, 255, 0.05);
 }
 
+/* Symbol and type badge share the first row; the name wraps below. */
+.popped-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'symbol badge'
+    'name   name';
+  align-items: center;
+  column-gap: 8px;
+}
+
 .popped-item-symbol {
+  grid-area: symbol;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .popped-item-name {
+  grid-area: name;
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.popped-item-badge {
+  grid-area: badge;
+  justify-self: end;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
 }
 
 .animated-selector {
@@ -502,7 +531,7 @@
 }
 
 .remaining-shares-badge strong {
-  color: var(--accent-color, #6366f1);
+  color: var(--accent-color, #10b981);
   font-weight: 700;
 }
 

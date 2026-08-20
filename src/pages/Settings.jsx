@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Shield, Briefcase, ChevronRight, LogOut, LogIn, RefreshCw, Upload, Download, Server } from 'lucide-react';
+import { Shield, Briefcase, ChevronRight, LogOut, LogIn, RefreshCw, Upload, Download, Server, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Settings() {
@@ -38,7 +38,24 @@ export default function Settings() {
 
             <div 
               className="settings-item" 
-              onClick={() => navigate('/settings/import/budget')} 
+              onClick={() => navigate('/settings/import/ktrade')} 
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', borderTop: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+                  <Mail size={20} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '16px', fontWeight: '500' }}>KTrade (KASB)</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Trade confirmations from email or PDF</span>
+                </div>
+              </div>
+              <ChevronRight size={20} style={{ color: 'var(--text-secondary)' }} />
+            </div>
+
+            <div 
+              className="settings-item" 
+              onClick={() => navigate('/settings/import/csv')} 
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', borderTop: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -46,8 +63,8 @@ export default function Settings() {
                   <Download size={20} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '16px', fontWeight: '500' }}>Budget App Export</span>
-                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Import stock trades exported from Flutter app</span>
+                  <span style={{ fontSize: '16px', fontWeight: '500' }}>CSV Import</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Import stock trades from a CSV file</span>
                 </div>
               </div>
               <ChevronRight size={20} style={{ color: 'var(--text-secondary)' }} />
@@ -68,7 +85,7 @@ export default function Settings() {
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6366f1' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
                   <Briefcase size={20} />
                 </div>
                 <span style={{ fontSize: '16px', fontWeight: '500' }}>Manage Portfolios</span>

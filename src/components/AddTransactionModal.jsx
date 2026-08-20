@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Calendar, ArrowDown, ArrowUp, Wallet, ArrowUpRight, 
-  Coins, Receipt, Tag, Briefcase, Search, DollarSign
+  Tag, Briefcase, Search, DollarSign
 } from 'lucide-react';
 import AssetSelect from './AssetSelect';
 import UnifiedDropdown from './UnifiedDropdown';
@@ -13,12 +13,13 @@ import { useData } from '../context/DataContext';
 import { fetchHistoricalFxRate } from '../utils/api';
 import * as db from '../store/db';
 import './AddTransactionModal.css';
+import { displayTicker } from '../utils/format';
 
+// Trades only. Dividends and taxes were removed deliberately: the importers no
+// longer bring cash events in either, so the tracker records buys and sells.
 const TX_TYPES = [
   { id: 'BUY', label: 'Buy', icon: ArrowDown, color: '#EF5350', bg: 'rgba(239, 83, 80, 0.15)' },
   { id: 'SELL', label: 'Sell', icon: ArrowUp, color: '#81C784', bg: 'rgba(129, 199, 132, 0.15)' },
-  { id: 'DIVIDEND', label: 'Dividend', icon: Coins, color: '#CE93D8', bg: 'rgba(206, 147, 216, 0.15)' },
-  { id: 'TAX', label: 'Tax', icon: Receipt, color: '#90A4AE', bg: 'rgba(144, 164, 174, 0.15)' },
 ];
 
 const slideVariants = {
@@ -113,7 +114,10 @@ export default function AddTransactionModal({ isOpen, onClose, initialData = nul
 
   const isTradeType = type === 'BUY' || type === 'SELL';
   const needsAsset = type !== 'DEPOSIT' && type !== 'WITHDRAW';
-  const activeTypeMeta = TX_TYPES.find(t => t.id === type);
+  // A transaction saved before dividends/taxes were dropped can still be opened
+  // for editing, so fall back to its stored type rather than rendering blank.
+  const activeTypeMeta = TX_TYPES.find(t => t.id === type)
+    || (type ? { id: type, label: type.charAt(0) + type.slice(1).toLowerCase() } : null);
 
   const handleTypeChange = (newType) => {
     const oldIndex = TX_TYPES.findIndex(t => t.id === type);
@@ -345,7 +349,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData = nul
                         <input 
                           type="text" 
                           placeholder="Search ticker or name..."
-                          value={asset ? `${asset.symbol} - ${asset.name}` : ''} 
+                          value={asset ? `${displayTicker(asset.symbol)} - ${asset.name}` : ''} 
                           readOnly 
                           style={{ cursor: 'pointer' }} 
                         />

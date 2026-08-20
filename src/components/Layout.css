@@ -210,7 +210,7 @@
 
 .sidebar .nav-item.active .lucide {
   stroke: url(#icon-gradient);
-  filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.6));
+  filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.6));
   transform: scale(1.15);
   stroke-width: 2.5;
 }
@@ -307,7 +307,7 @@
 /* Gradient and outer glow on the icon itself */
 .bottom-nav .nav-item.active .lucide {
   stroke: url(#icon-gradient);
-  filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.8));
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.8));
   transform: scale(1.15) translateY(-3px);
   stroke-width: 2.5;
 }

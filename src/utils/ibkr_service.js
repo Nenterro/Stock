@@ -168,6 +168,9 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
       }
 
       // 2. Cash Transactions section (Dividends, Taxes, Deposits, Withdrawals)
+      //
+      // Counted but never imported: this tracker records trades only, so cash
+      // events are tallied for the summary line and then discarded.
       else if (inCash) {
         const rawType = getField(cells, headers, 'Type');
         if (!rawType || rawType === 'Type' || rawType.startsWith('Total')) continue;
@@ -194,37 +197,20 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
 
         if (!txType) continue;
 
-        const isCashOnly = txType === 'DIVIDEND' || txType === 'TAX';
-        const effectiveTicker = (symbol && symbol !== 'Symbol') ? symbol.toUpperCase() : 'CASH';
-        const id = `ibkr_cash_${txType.toLowerCase()}_${effectiveTicker}_${formattedDate}_${Math.abs(amount).toFixed(2)}`;
-
-        txs.push({
-          id,
-          source: 'IBKR',
-          ticker: effectiveTicker,
-          type: txType,
-          shares: 0,
-          price: 0,
-          fees: 0,
-          amount: Math.abs(amount),
-          currency: 'USD',
-          exchangeRate: 1.0,
-          date: formattedDate,
-          settlementDate: null,
-          note: `Imported from IBKR: ${rawType} (${effectiveTicker})`
-        });
-
+        // Tallied for the summary line, then dropped: this tracker records
+        // trades only, so dividends, taxes and cash transfers are not imported.
         if (txType === 'DEPOSIT') depositCount++;
         else if (txType === 'WITHDRAWAL') withdrawalCount++;
         else if (txType === 'DIVIDEND') dividendCount++;
         else if (txType === 'TAX') taxCount++;
+        continue;
       }
     } catch (e) {
       // Ignore non-transaction/malformed rows
     }
   }
 
-  onLog(`Found: ${tradeCount} Trades, ${dividendCount} Dividends, ${taxCount} Taxes, ${depositCount + withdrawalCount} Cash Transfers.`);
+  onLog(`Found: ${tradeCount} Trades. Skipped ${dividendCount} Dividends, ${taxCount} Taxes, ${depositCount + withdrawalCount} Cash Transfers (trades only).`);
   return txs;
 }
 

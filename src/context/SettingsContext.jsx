@@ -14,7 +14,7 @@ const DEFAULT_SETTINGS = {
   dashboard: { period: 'All Time', customRange: { start: null, end: null }, filters: { ...DEFAULT_FILTER_STATE } },
   transactions: { period: 'All Time', customRange: { start: null, end: null }, filters: { ...DEFAULT_FILTER_STATE } },
   graph: { period: 'All Time', customRange: { start: null, end: null }, filters: { ...DEFAULT_FILTER_STATE } },
-  appearance: { theme: 'purple', customHex: '#6366f1', baseCurrency: 'USD' },
+  appearance: { theme: 'purple', customHex: '#10b981', baseCurrency: 'USD' },
   security: { e2eeEnabled: false, hasPromptedE2ee: false }
 };
 

@@ -1,19 +1,26 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { Shield, AlertTriangle } from 'lucide-react';
 import * as db from '../store/db';
 import { pb, syncAll, syncSettings, setupRealtimeSync, connectPocketBase } from '../store/sync';
 import { isUnlocked, tryRestoreSession, deriveKey, verifyPinWithData, hasCachedPin } from '../utils/crypto';
 import PinPad from '../components/PinPad';
 import { useSecuritySettings } from './SettingsContext';
-import { fetchExchangeRates, fetchBatchPrices, checkBackendHealth, fetchHistoricalFxRate } from '../utils/api';
+import { fetchExchangeRates, fetchBatchPrices, checkBackendHealth, fetchHistoricalFxRate, fetchHistoricalPricesBatch, fetchFxSeries } from '../utils/api';
 
 const DataContext = createContext(null);
+
+const HISTORY_CACHE_KEY = 'stock_tracker_price_history';
+const FX_SERIES_CACHE_KEY = 'stock_tracker_fx_series';
+const HISTORY_TTL = 6 * 60 * 60 * 1000; // 6 hours - daily closes only move once a day
 
 export function DataProvider({ children }) {
   const [transactions, setTransactions] = useState([]);
   const [portfolios, setPortfolios] = useState([]);
   const [exchangeRates, setExchangeRates] = useState({});
   const [livePrices, setLivePrices] = useState({});
+  const [historicalPrices, setHistoricalPrices] = useState({});
+  const [fxSeries, setFxSeries] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [backendStatus, setBackendStatus] = useState({ connected: false, activeUrl: null });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -31,6 +38,10 @@ export function DataProvider({ children }) {
 
   const [unlocked, setUnlocked] = useState(false);
   const [needsPin, setNeedsPin] = useState(false);
+  // True until init() has finished working out whether this account already
+  // has encrypted data. Until then we cannot tell "no PIN set up yet" from
+  // "PIN exists, we just have not read the settings yet".
+  const [securityResolved, setSecurityResolved] = useState(false);
   const [pinInput, setPinInput] = useState('');
 
   const { isE2eeEnabled, hasPromptedE2ee, setE2EE, dismissE2EEPrompt, reloadSettings } = useSecuritySettings();
@@ -39,11 +50,21 @@ export function DataProvider({ children }) {
   const [onboardingConfirmPin, setOnboardingConfirmPin] = useState('');
   const [isProcessingOnboarding, setIsProcessingOnboarding] = useState(false);
 
+  // Offering "set up a PIN" before init() has resolved is what produced the
+  // new-device double prompt: local settings still held defaults, so this fired
+  // immediately, and moments later init() found remote encrypted data and
+  // raised the unlock prompt on top of it.
   useEffect(() => {
+    if (!securityResolved) return;
     if (pb.authStore.isValid && !isE2eeEnabled && !hasPromptedE2ee && !needsPin && !unlocked && onboardingStep === 0) {
       setOnboardingStep(1);
     }
-  }, [pb.authStore.isValid, isE2eeEnabled, hasPromptedE2ee, needsPin, unlocked, onboardingStep]);
+  }, [securityResolved, pb.authStore.isValid, isE2eeEnabled, hasPromptedE2ee, needsPin, unlocked, onboardingStep]);
+
+  // If an unlock prompt appears, any setup flow already on screen is wrong.
+  useEffect(() => {
+    if (needsPin && onboardingStep > 0) setOnboardingStep(0);
+  }, [needsPin, onboardingStep]);
 
   const handleSkipOnboarding = async () => {
     await dismissE2EEPrompt();
@@ -97,7 +118,17 @@ export function DataProvider({ children }) {
     let unsub = null;
     let isMounted = true;
 
+    // Wrapper so every exit path - including the early return when there is no
+    // server or no session - marks the security state as resolved exactly once.
     async function init() {
+      try {
+        await initInner();
+      } finally {
+        if (isMounted) setSecurityResolved(true);
+      }
+    }
+
+    async function initInner() {
       await loadData();
       setIsLoading(false);
 
@@ -179,6 +210,16 @@ export function DataProvider({ children }) {
   }, [loadData, reloadSettings]);
 
 
+  // Local writes are already reflected in state optimistically, so a mutation
+  // should not block the caller on a network round trip. Sync runs in the
+  // background and reloads from the local store when it settles; realtime
+  // updates from other devices arrive through setupRealtimeSync regardless.
+  const syncInBackground = useCallback(() => {
+    syncAll()
+      .then(() => loadData())
+      .catch((err) => console.warn('Background sync failed:', err));
+  }, [loadData]);
+
   const addTransaction = async (tx) => {
     if (Array.isArray(tx)) {
       const savedTxs = await Promise.all(tx.map(t => db.saveTransaction(t)));
@@ -201,8 +242,7 @@ export function DataProvider({ children }) {
         return copy.sort((a, b) => new Date(b.date) - new Date(a.date));
       });
     }
-    await syncAll();
-    await loadData();
+    syncInBackground();
   };
 
   const updateTransaction = async (tx) => {
@@ -217,8 +257,7 @@ export function DataProvider({ children }) {
       }
       return copy.sort((a, b) => new Date(b.date) - new Date(a.date));
     });
-    await syncAll();
-    await loadData();
+    syncInBackground();
   };
 
   const deleteTransaction = async (id) => {
@@ -227,8 +266,7 @@ export function DataProvider({ children }) {
       let updated = prev.filter(t => t.id !== id);
       return updated.sort((a, b) => new Date(b.date) - new Date(a.date));
     });
-    await syncAll();
-    await loadData();
+    syncInBackground();
   };
 
   const updateDataItem = async (store, item, setType) => {
@@ -242,13 +280,13 @@ export function DataProvider({ children }) {
       }
       return [...prev, saved];
     });
-    syncAll();
+    syncInBackground();
   };
 
   const deleteDataItem = async (store, id, setType) => {
     await db.deleteItem(store, id);
     setType(prev => prev.filter(p => p.id !== id));
-    syncAll();
+    syncInBackground();
   };
 
   const handlePinSubmit = async (enteredPin) => {
@@ -290,7 +328,7 @@ export function DataProvider({ children }) {
       });
       return copy.sort((a, b) => new Date(b.date) - new Date(a.date));
     });
-    syncAll().catch(e => console.error("Background sync error:", e));
+    syncInBackground();
   };
 
   // Backend Health Check Loop
@@ -316,17 +354,93 @@ export function DataProvider({ children }) {
     });
   }, []);
 
-  useEffect(() => {
-    if (!transactions || transactions.length === 0) return;
-    const uniqueTickers = [...new Set(transactions.map(t => t.asset || t.ticker).filter(Boolean))];
-    if (uniqueTickers.length === 0) return;
+  // The set of tickers we need market data for. Derived as a stable string so
+  // that unrelated edits to a transaction don't re-trigger network fetches.
+  const tickerKey = useMemo(() => {
+    if (!transactions || transactions.length === 0) return '';
+    return [...new Set(
+      transactions
+        .map(t => String(t.ticker || t.asset || '').trim().toUpperCase())
+        .filter(t => t && t !== 'CASH')
+    )].sort().join(',');
+  }, [transactions]);
 
-    fetchBatchPrices(uniqueTickers).then(prices => {
+  useEffect(() => {
+    if (!tickerKey) return;
+    fetchBatchPrices(tickerKey.split(',')).then(prices => {
       if (prices && Object.keys(prices).length > 0) {
         setLivePrices(prev => ({ ...prev, ...prices }));
       }
     });
-  }, [transactions]);
+  }, [tickerKey]);
+
+  // Historical daily closes for every held ticker. Without these the graph has
+  // no real price history to value past holdings against.
+  useEffect(() => {
+    if (!tickerKey) return;
+    let mounted = true;
+
+    // Serve the cached copy immediately so the chart renders on load, then
+    // refresh in the background.
+    try {
+      const cached = localStorage.getItem(HISTORY_CACHE_KEY);
+      if (cached) {
+        const { key, data, timestamp } = JSON.parse(cached);
+        if (key === tickerKey && Date.now() - timestamp < HISTORY_TTL && data) {
+          setHistoricalPrices(data);
+        }
+      }
+    } catch (e) {
+      // Corrupt cache entry - ignore and refetch.
+    }
+
+    setHistoryLoading(true);
+    fetchHistoricalPricesBatch(tickerKey.split(','), '5y')
+      .then(data => {
+        if (!mounted || !data || Object.keys(data).length === 0) return;
+        setHistoricalPrices(data);
+        try {
+          localStorage.setItem(
+            HISTORY_CACHE_KEY,
+            JSON.stringify({ key: tickerKey, data, timestamp: Date.now() })
+          );
+        } catch (e) {
+          // Over quota - the in-memory copy still works for this session.
+        }
+      })
+      .finally(() => {
+        if (mounted) setHistoryLoading(false);
+      });
+
+    return () => { mounted = false; };
+  }, [tickerKey]);
+
+  // Historical USD->PKR series, so past values convert at the rate that was
+  // actually in effect rather than today's rate.
+  useEffect(() => {
+    let mounted = true;
+    try {
+      const cached = localStorage.getItem(FX_SERIES_CACHE_KEY);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < HISTORY_TTL && data) setFxSeries(data);
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    fetchFxSeries().then(series => {
+      if (!mounted || !series) return;
+      setFxSeries(series);
+      try {
+        localStorage.setItem(FX_SERIES_CACHE_KEY, JSON.stringify({ data: series, timestamp: Date.now() }));
+      } catch (e) {
+        // ignore
+      }
+    });
+
+    return () => { mounted = false; };
+  }, []);
 
   // Backfill missing historical FX rates for transactions
   useEffect(() => {
@@ -356,7 +470,7 @@ export function DataProvider({ children }) {
 
   return (
     <DataContext.Provider value={{ 
-      transactions, portfolios, exchangeRates, setExchangeRates, livePrices, backendStatus, isLoading, loadData,
+      transactions, portfolios, exchangeRates, setExchangeRates, livePrices, historicalPrices, fxSeries, historyLoading, backendStatus, isLoading, loadData,
       addTransaction, updateTransaction, deleteTransaction, saveTransactionsBatch,
       savePortfolio: (item) => updateDataItem(db.portfoliosStore, item, setPortfolios),
       deletePortfolio: (id) => deleteDataItem(db.portfoliosStore, id, setPortfolios),
@@ -368,7 +482,7 @@ export function DataProvider({ children }) {
           <div className="glass-panel" style={{ padding: '32px', borderRadius: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: '340px', width: '90%', textAlign: 'center', gap: '16px', position: 'relative' }}>
             {onboardingStep === 1 ? (
               <>
-                <div style={{ padding: '16px', background: 'rgba(99,102,241,0.15)', borderRadius: '50%', color: 'var(--accent-color)' }}>
+                <div style={{ padding: '16px', background: 'rgba(16,185,129,0.15)', borderRadius: '50%', color: 'var(--accent-color)' }}>
                   <Shield size={36} />
                 </div>
                 <h2 style={{ margin: 0, fontSize: '20px' }}>Protect Your Privacy</h2>

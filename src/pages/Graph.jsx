@@ -4,20 +4,20 @@ import { useAppearanceSettings, usePageSettings } from '../context/SettingsConte
 import { NavLink } from 'react-router-dom';
 import { Home, TrendingUp, TrendingDown, RefreshCcw, DollarSign, Percent, Filter, GitCompare, ChevronDown, Maximize2, Minimize2, Smartphone, RotateCcw } from 'lucide-react';
 import { formatCurrency, getCurrencySymbol } from '../utils/format';
-import { generatePortfolioTimeSeries, calculateAllTimeMWR } from '../utils/portfolio_math';
+import { generatePortfolioTimeSeries, rebaseSeries } from '../utils/portfolio_math';
 import BackendStatusDot from '../components/BackendStatusDot';
 import FilterModal from '../components/FilterModal';
 import CompareModal from '../components/CompareModal';
 import UnifiedDropdown from '../components/UnifiedDropdown';
 import { 
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid 
+  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid 
 } from 'recharts';
 import './Graph.css';
 
 const PERIODS = ['1M', '3M', 'YTD', '1Y', 'All Time'];
 
 export default function Graph() {
-  const { transactions, livePrices, exchangeRates } = useData();
+  const { transactions, livePrices, historicalPrices, fxSeries, historyLoading, exchangeRates } = useData();
   const { baseCurrency } = useAppearanceSettings();
 
   const [displayCurrency, setDisplayCurrency] = useState(baseCurrency || 'USD');
@@ -115,27 +115,29 @@ export default function Graph() {
 
   // Generate full daily time-series data using filtered transactions
   const rawTimeSeries = useMemo(() => {
-    return generatePortfolioTimeSeries(filteredTransactions, livePrices, displayCurrency, currentFxRate);
-  }, [filteredTransactions, livePrices, displayCurrency, currentFxRate]);
+    return generatePortfolioTimeSeries(filteredTransactions, livePrices, historicalPrices, displayCurrency, currentFxRate, fxSeries);
+  }, [filteredTransactions, livePrices, historicalPrices, displayCurrency, currentFxRate, fxSeries]);
 
-  // Filter time series based on selected period tab (1M, 3M, YTD, 1Y, All Time)
+  // Slice to the selected period tab (1M, 3M, YTD, 1Y, All Time) and re-base the
+  // return series so the window reports the return earned *within* that window.
   const filteredTimeSeries = useMemo(() => {
     if (!rawTimeSeries || rawTimeSeries.length === 0) return [];
     if (period === 'All Time') return rawTimeSeries;
 
-    const lastPointDate = new Date(rawTimeSeries[rawTimeSeries.length - 1].date);
-    let cutoff = new Date(lastPointDate);
+    const [ly, lm, ld] = rawTimeSeries[rawTimeSeries.length - 1].date.split('-').map(Number);
+    let cutoff;
+    if (period === '1M') cutoff = new Date(Date.UTC(ly, lm - 2, ld));
+    else if (period === '3M') cutoff = new Date(Date.UTC(ly, lm - 4, ld));
+    else if (period === 'YTD') cutoff = new Date(Date.UTC(ly, 0, 1));
+    else if (period === '1Y') cutoff = new Date(Date.UTC(ly - 1, lm - 1, ld));
+    else return rawTimeSeries;
 
-    if (period === '1M') cutoff.setMonth(cutoff.getMonth() - 1);
-    else if (period === '3M') cutoff.setMonth(cutoff.getMonth() - 3);
-    else if (period === 'YTD') cutoff = new Date(lastPointDate.getFullYear(), 0, 1);
-    else if (period === '1Y') cutoff.setFullYear(cutoff.getFullYear() - 1);
-
-    const filtered = rawTimeSeries.filter(pt => new Date(pt.date) >= cutoff);
-    return filtered.length > 0 ? filtered : rawTimeSeries;
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const sliced = rawTimeSeries.filter(pt => pt.date >= cutoffStr);
+    return sliced.length > 1 ? rebaseSeries(sliced) : rawTimeSeries;
   }, [rawTimeSeries, period]);
 
-  // Calculate reactive period summary metrics
+  // Reactive summary for the selected period and metric
   const periodSummary = useMemo(() => {
     if (!filteredTimeSeries || filteredTimeSeries.length === 0) {
       return { currentValue: 0, costBasis: 0, periodGain: 0, periodReturnPct: 0 };
@@ -143,35 +145,30 @@ export default function Graph() {
 
     const startPt = filteredTimeSeries[0];
     const endPt = filteredTimeSeries[filteredTimeSeries.length - 1];
-
     const currentValue = endPt.value;
-    const costBasis = endPt.costBasis;
 
-    let periodGain = 0;
-    let periodReturnPct = 0;
+    let periodGain;
+    let periodReturnPct;
 
     if (chartMode === 'value') {
-      periodGain = endPt.value - startPt.value;
+      // Change in market value over the window, net of money added or removed.
+      const netFlow = (endPt.costBasis - startPt.costBasis);
+      periodGain = endPt.value - startPt.value - netFlow;
       const startVal = startPt.value > 0 ? startPt.value : (startPt.costBasis || 1);
       periodReturnPct = (periodGain / startVal) * 100.0;
-    } else if (chartMode === 'twr') {
-      const startTwr = startPt.twrFactor || 1.0;
-      const endTwr = endPt.twrFactor || 1.0;
-      periodReturnPct = startTwr > 0 ? ((endTwr / startTwr) - 1.0) * 100.0 : 0.0;
-      periodGain = (currentValue * (periodReturnPct / 100.0));
-    } else if (chartMode === 'mwr') {
-      const mwrVal = calculateAllTimeMWR(transactions, currentValue, displayCurrency, currentFxRate);
-      periodReturnPct = mwrVal.cumulative;
-      periodGain = endPt.pnl;
+    } else {
+      // Already re-based to the window by rebaseSeries.
+      periodReturnPct = metricSelector === 'mwr' ? endPt.mwrPct : endPt.twrPct;
+      periodGain = endPt.pnl - startPt.pnl;
     }
 
     return {
       currentValue,
-      costBasis,
+      costBasis: endPt.costBasis,
       periodGain,
       periodReturnPct
     };
-  }, [filteredTimeSeries, chartMode, transactions, displayCurrency, currentFxRate]);
+  }, [filteredTimeSeries, chartMode, metricSelector]);
 
   // Currency Toggle Pill
   const renderCurrencyTogglePill = () => (
@@ -207,6 +204,12 @@ export default function Graph() {
           <div className="tooltip-row">
             <span className="tooltip-label">Cost Basis:</span>
             <span className="tooltip-val">{getCurrencySymbol(displayCurrency)}{formatCurrency(data.costBasis)}</span>
+          </div>
+          <div className="tooltip-row">
+            <span className="tooltip-label">Unrealized P&amp;L:</span>
+            <span className="tooltip-val" style={{ color: data.unrealizedPnl >= 0 ? '#10b981' : '#ef4444' }}>
+              {data.unrealizedPnl >= 0 ? '+' : '-'}{getCurrencySymbol(displayCurrency)}{formatCurrency(Math.abs(data.unrealizedPnl || 0))}
+            </span>
           </div>
           <div className="tooltip-row">
             <span className="tooltip-label">TWR:</span>
@@ -273,23 +276,69 @@ export default function Graph() {
     </div>
   );
 
-  // Compute All-Time metrics for the top hero card
+  // All-Time metrics for the top hero card. These come from the same series the
+  // chart draws, so the header can never disagree with the graph.
   const endPoint = rawTimeSeries.length > 0 ? rawTimeSeries[rawTimeSeries.length - 1] : null;
   const totalPortfolioValue = endPoint ? endPoint.value : 0;
   const totalGainDollars = endPoint ? endPoint.pnl : 0;
   const allTimeTwr = endPoint ? endPoint.twrPct : 0;
+  const allTimeMwr = endPoint ? endPoint.mwrPct : 0;
+
+
+  const gradientOffset = () => {
+    if (filteredTimeSeries.length === 0 || chartMode === 'value') return 0;
+    const dataKey = metricSelector === 'mwr' ? 'mwrPct' : 'twrPct';
+    const dataMax = Math.max(...filteredTimeSeries.map(i => i[dataKey] || 0));
+    const dataMin = Math.min(...filteredTimeSeries.map(i => i[dataKey] || 0));
+    
+    if (dataMax <= 0) return 0;
+    if (dataMin >= 0) return 1;
+    return dataMax / (dataMax - dataMin);
+  };
   
-  const allTimeMwr = useMemo(() => {
-    const res = calculateAllTimeMWR(filteredTransactions, totalPortfolioValue, displayCurrency, currentFxRate);
-    return res.cumulative;
-  }, [filteredTransactions, totalPortfolioValue, displayCurrency, currentFxRate]);
+  
+  // Hard-stop colour bands along the x axis: green where the portfolio is worth
+  // at least what was put in, red where it is not. Used for both the line and
+  // its fill so the two can never disagree.
+  const getGradientStops = (data, opacity = 1) => {
+    if (!data || data.length === 0) return null;
+    const colorAt = (pt) => (pt.value >= pt.costBasis ? '#10b981' : '#ef4444');
+    const stops = [];
+    let lastColor = colorAt(data[0]);
 
-  const activeReturnPct = chartMode === 'value' 
-    ? periodSummary.periodReturnPct 
-    : (metricSelector === 'mwr' ? allTimeMwr : allTimeTwr);
+    stops.push(<stop key={0} offset="0%" stopColor={lastColor} stopOpacity={opacity} />);
 
-  const isPositiveReturn = activeReturnPct >= 0;
-  const chartColor = isPositiveReturn ? '#10b981' : '#ef4444';
+    for (let i = 1; i < data.length; i++) {
+      const color = colorAt(data[i]);
+      if (color !== lastColor) {
+        const prevOffset = `${((i - 1) / (data.length - 1)) * 100}%`;
+        const currOffset = `${(i / (data.length - 1)) * 100}%`;
+
+        stops.push(<stop key={`${i}-1`} offset={prevOffset} stopColor={lastColor} stopOpacity={opacity} />);
+        stops.push(<stop key={`${i}-2`} offset={currOffset} stopColor={color} stopOpacity={opacity} />);
+        lastColor = color;
+      }
+    }
+
+    stops.push(<stop key="end" offset="100%" stopColor={lastColor} stopOpacity={opacity} />);
+    return stops;
+  };
+
+  const off = gradientOffset();
+  const renderActiveDot = (props) => {
+    const { cx, cy, payload } = props;
+    if (!payload) return null;
+    let isRed = false;
+    if (chartMode === 'value') {
+      isRed = payload.value < payload.costBasis;
+    } else {
+      const val = metricSelector === 'mwr' ? payload.mwrPct : payload.twrPct;
+      isRed = val < 0;
+    }
+    return <circle cx={cx} cy={cy} r={4} fill={isRed ? '#ef4444' : '#10b981'} stroke="#1f2937" strokeWidth={2} />;
+  };
+
+
 
   return (
     <div className="page-container graph-page">
@@ -443,16 +492,47 @@ export default function Graph() {
         <div className={`chart-container ${isExpanded ? 'expanded' : ''}`}>
           {filteredTimeSeries.length === 0 ? (
             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}>
-              No transaction history available for graphing.
+              {historyLoading ? 'Loading price history…' : 'No transaction history available for graphing.'}
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={filteredTimeSeries} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+              <ComposedChart data={filteredTimeSeries} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={chartColor} stopOpacity={0.4} />
-                    <stop offset="95%" stopColor={chartColor} stopOpacity={0.0} />
+                  <linearGradient id="valueSplitColor" x1="0" y1="0" x2="1" y2="0">
+                    {getGradientStops(filteredTimeSeries)}
                   </linearGradient>
+
+                  {/* The fill reuses the line's colour bands. A linearGradient
+                      has a single axis, so the vertical fade is applied as a
+                      mask instead of being baked into these stops - that keeps
+                      the fill matching the line segment for segment. The stops
+                      still carry a base opacity so the fill stays translucent
+                      even if the mask is not applied. */}
+                  <linearGradient id="valueSplitFill" x1="0" y1="0" x2="1" y2="0">
+                    {getGradientStops(filteredTimeSeries, 0.35)}
+                  </linearGradient>
+                  <linearGradient id="valueFadeDown" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ffffff" stopOpacity={1} />
+                    <stop offset="95%" stopColor="#ffffff" stopOpacity={0} />
+                  </linearGradient>
+                  <mask id="valueFillMask" maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%">
+                    <rect x="0" y="0" width="100%" height="100%" fill="url(#valueFadeDown)" />
+                  </mask>
+                  
+                  {chartMode === 'gain' && (
+                    <>
+                      <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset={off} stopColor="#10b981" stopOpacity={1} />
+                        <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
+                      </linearGradient>
+                      <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset={0} stopColor="#10b981" stopOpacity={0.4} />
+                        <stop offset={off} stopColor="#10b981" stopOpacity={0.0} />
+                        <stop offset={off} stopColor="#ef4444" stopOpacity={0.0} />
+                        <stop offset={1} stopColor="#ef4444" stopOpacity={0.4} />
+                      </linearGradient>
+                    </>
+                  )}
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" vertical={false} />
                 <XAxis 
@@ -475,15 +555,58 @@ export default function Graph() {
                   domain={['auto', 'auto']}
                 />
                 <Tooltip content={<CustomTooltip />} />
-                <Area 
-                  type="monotone" 
-                  dataKey={chartMode === 'value' ? 'value' : (metricSelector === 'mwr' ? 'mwrPct' : 'twrPct')}
-                  stroke={chartColor}
-                  strokeWidth={2.5}
-                  fillOpacity={1}
-                  fill="url(#chartGradient)"
-                />
-              </AreaChart>
+                {chartMode === 'value' ? (
+                  /* Fill and line are drawn as two Areas on purpose. Recharts
+                     hands an Area's props to both its fill path and its stroke
+                     path, so masking a single Area would fade the line itself
+                     down the y axis. Splitting them lets the vertical fade
+                     apply to the fill alone while the line stays crisp - and
+                     both read their colour from the same cost-basis bands. */
+                  <>
+                    <Area
+                      type="monotone"
+                      dataKey="value"
+                      stroke="none"
+                      fillOpacity={1}
+                      fill="url(#valueSplitFill)"
+                      mask="url(#valueFillMask)"
+                      activeDot={false}
+                      isAnimationActive={false}
+                      legendType="none"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="value"
+                      stroke="url(#valueSplitColor)"
+                      strokeWidth={2.5}
+                      fill="none"
+                      activeDot={renderActiveDot}
+                      isAnimationActive={false}
+                    />
+                  </>
+                ) : (
+                  <Area
+                    type="monotone"
+                    dataKey={metricSelector === 'mwr' ? 'mwrPct' : 'twrPct'}
+                    stroke="url(#splitColor)"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#chartGradient)"
+                    activeDot={renderActiveDot}
+                  />
+                )}
+                {chartMode === 'value' && (
+                  <Line 
+                    type="stepAfter" 
+                    dataKey="costBasis" 
+                    stroke="rgba(255, 255, 255, 0.4)" 
+                    strokeWidth={2} 
+                    strokeDasharray="4 4" 
+                    dot={false} 
+                    isAnimationActive={false}
+                  />
+                )}
+              </ComposedChart>
             </ResponsiveContainer>
           )}
         </div>

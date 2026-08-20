@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local Claude Code settings
+.claude/
+
+# Throwaway analysis and patch scripts
+scratch/

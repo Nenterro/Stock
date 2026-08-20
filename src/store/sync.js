@@ -228,6 +228,9 @@ async function syncDataStore(store, collectionName) {
     }
 
     // ── PHASE 2: Push local pending items ──
+    // Anything written here is newer than the PHASE 1 snapshot, so PHASE 3
+    // must not judge it against that snapshot.
+    const justSynced = new Set();
     const localItems = [];
     await store.iterate((value) => {
       if (value && value.pendingSync) localItems.push(value);
@@ -297,19 +300,33 @@ async function syncDataStore(store, collectionName) {
         }
         item.pendingSync = false;
         await store.setItem(item.id, item);
+        justSynced.add(item.id);
       } catch (err) {
         console.error(`PB Push Error [${collectionName}]:`, err);
       }
     }
 
     // ── PHASE 3: Clean up local records deleted remotely ──
+    //
+    // `remoteIds` is the PHASE 1 snapshot, taken before anything was pushed.
+    // Records created during PHASE 2 carry a fresh PocketBase id and are no
+    // longer pendingSync, so without excluding them this step deleted the very
+    // transaction that had just been saved - which is why a new transaction
+    // vanished until the next refresh pulled it back down.
     const remoteIds = new Set(remoteItems.map(r => r.id));
+    const staleKeys = [];
     await store.iterate((value, key) => {
-      // If the local record has a valid PB ID, is not pending sync, and doesn't exist remotely → delete locally
-      if (key && key.length === 15 && !value.pendingSync && !remoteIds.has(key)) {
-        store.removeItem(key);
-      }
+      if (!key || key.length !== 15) return;
+      if (value && value.pendingSync) return;
+      if (justSynced.has(key)) return;
+      if (remoteIds.has(key)) return;
+      staleKeys.push(key);
     });
+    // Removals are awaited rather than fired off inside iterate, so the store
+    // is settled before callers reload from it.
+    for (const key of staleKeys) {
+      await store.removeItem(key);
+    }
   } catch (error) {
     console.error(`Sync Error [${collectionName}]:`, error);
   }

@@ -93,7 +93,7 @@ export default class ErrorBoundary extends React.Component {
                   padding: '12px 16px',
                   borderRadius: '12px',
                   border: 'none',
-                  background: '#6366f1',
+                  background: '#10b981',
                   color: '#fff',
                   fontWeight: 600,
                   fontSize: '14px',

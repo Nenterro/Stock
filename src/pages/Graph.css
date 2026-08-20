@@ -67,9 +67,9 @@
 }
 
 .segmented-btn.active {
-  background: var(--accent-color, #6366f1);
+  background: var(--accent-color, #10b981);
   color: #ffffff;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
 }
 
 /* 1. Standalone Top Portfolio Value Pill / Card */
@@ -243,9 +243,9 @@
 }
 
 .period-pill.active {
-  background: var(--accent-color, #6366f1);
+  background: var(--accent-color, #10b981);
   color: #ffffff;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
 }
 
 /* Mobile Period Select Dropdown */
@@ -568,9 +568,9 @@ body:has(.fullscreen) .bottom-nav {
     transition: all 0.2s ease;
   }
   .period-pill.active {
-    background: var(--accent-color, #6366f1);
+    background: var(--accent-color, #10b981);
     color: #ffffff;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
   }
   /* Hide Dropdown in Landscape */
   .period-select-wrapper.mobile-only {
@@ -635,10 +635,10 @@ body:has(.fullscreen) .bottom-nav {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent-color, #8b5cf6);
-  background: rgba(139, 92, 246, 0.12);
+  color: var(--accent-color, #10b981);
+  background: rgba(16, 185, 129, 0.12);
   border-radius: 50%;
-  border: 1px solid rgba(139, 92, 246, 0.25);
+  border: 1px solid rgba(16, 185, 129, 0.25);
   margin-bottom: 4px;
 }
 
@@ -650,11 +650,11 @@ body:has(.fullscreen) .bottom-nav {
   position: absolute;
   bottom: -2px;
   right: -2px;
-  background: var(--accent-color, #8b5cf6);
+  background: var(--accent-color, #10b981);
   color: #fff;
   border-radius: 50%;
   padding: 3px;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.5);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
 }
 
 .rotate-prompt-title {

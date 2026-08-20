@@ -12,16 +12,16 @@ export default function PortfoliosSettings() {
   const [editingItem, setEditingItem] = useState(null);
   
   const [name, setName] = useState('');
-  const [color, setColor] = useState('#6366f1');
+  const [color, setColor] = useState('#10b981');
 
   const openModal = (item = null) => {
     setEditingItem(item);
     if (item) {
       setName(item.name || '');
-      setColor(item.color || '#6366f1');
+      setColor(item.color || '#10b981');
     } else {
       setName('');
-      setColor('#6366f1');
+      setColor('#10b981');
     }
     setModalOpen(true);
   };
@@ -120,7 +120,7 @@ export default function PortfoliosSettings() {
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>Color</label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {['#ef4444', '#f97316', '#f59e0b', '#10b981', '#0ea5e9', '#6366f1', '#8b5cf6', '#ec4899'].map(c => (
+                  {['#ef4444', '#f97316', '#f59e0b', '#10b981', '#0ea5e9', '#10b981', '#10b981', '#ec4899'].map(c => (
                     <button
                       key={c}
                       type="button"

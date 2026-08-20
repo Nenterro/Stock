@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, RefreshCw, Upload, FileText, CheckCircle2, 
@@ -12,8 +12,8 @@ import {
   syncIbkrFlexService, 
   stampHistoricalRates 
 } from '../utils/ibkr_service';
-import AssetMappingModal from '../components/AssetMappingModal';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, displayTicker } from '../utils/format';
+import { buildFingerprintIndex, isExactDuplicate } from '../utils/transactions';
 import * as db from '../store/db';
 import './IbkrImport.css';
 
@@ -46,8 +46,6 @@ export default function IbkrImport() {
   const fileInputRef = useRef(null);
 
   const [assetMappings, setAssetMappings] = useState({});
-  const [unmappedTickers, setUnmappedTickers] = useState([]);
-  const [pendingTxs, setPendingTxs] = useState([]);
 
   // Load saved Flex query credentials and mappings
   useEffect(() => {
@@ -84,41 +82,15 @@ export default function IbkrImport() {
     }, 50);
   };
 
-  const isDuplicate = (tx) => {
-    // A duplicate is considered if date, ticker, amount (or shares), and type are nearly identical
-    const txTime = new Date(tx.date).getTime();
-    
-    return transactions.some((ex) => {
-      // First check exact ID match from source system
-      if (ex.id === tx.id) return true;
-      
-      // Then check composite fields
-      if (ex.ticker !== tx.ticker || ex.type !== tx.type) return false;
-      
-      const exTime = new Date(ex.date).getTime();
-      const timeDiff = Math.abs(exTime - txTime);
-      
-      // Must be within 24 hours
-      if (timeDiff > 24 * 60 * 60 * 1000) return false;
-      
-      // For trades, check shares and price similarity
-      if (tx.type === 'buy' || tx.type === 'sell') {
-        const sharesDiff = Math.abs((ex.shares || 0) - (tx.shares || 0));
-        if (sharesDiff > 0.01) return false;
-        
-        // Sometimes prices slightly differ by rounding
-        const priceDiff = Math.abs((ex.price || 0) - (tx.price || 0));
-        if (priceDiff > 0.05) return false;
-      } 
-      // For cash transactions, check amount similarity
-      else {
-        const amtDiff = Math.abs((ex.amount || 0) - (tx.amount || 0));
-        if (amtDiff > 1) return false;
-      }
-      
-      return true;
-    });
-  };
+  // One shared rule across every importer: a trade is the same trade if the
+  // security, side, day, share count and price match - regardless of which
+  // source it arrived from. See utils/transactions.js.
+  const existingFingerprints = useMemo(
+    () => buildFingerprintIndex(transactions),
+    [transactions]
+  );
+
+  const isDuplicate = (tx) => isExactDuplicate(tx, existingFingerprints);
 
   const applyMappingsAndReview = (txs, currentMappings) => {
     const mapped = txs.map(t => {
@@ -143,23 +115,6 @@ export default function IbkrImport() {
     setSelectedIndices(initialSelected);
     setStatus('reviewing');
     addLog(`✨ Successfully loaded ${mapped.length} total transaction(s) for review.`);
-  };
-
-  const handleMappingComplete = async (newMappings) => {
-    const updated = { ...assetMappings, ...newMappings };
-    setAssetMappings(updated);
-    
-    try {
-      const settings = (await db.settingsStore.getItem('stocksettings123')) || { id: 'stocksettings123', config: {} };
-      settings.config = settings.config || {};
-      settings.config.assetMappings = updated;
-      settings.pendingSync = true;
-      await db.settingsStore.setItem('stocksettings123', settings);
-    } catch (e) {
-      console.warn('Failed to save mappings', e);
-    }
-
-    applyMappingsAndReview(pendingTxs, updated);
   };
 
   // 1. Action: Sync via Automated Flex Web Service
@@ -196,16 +151,9 @@ export default function IbkrImport() {
         throw new Error('No transactions returned or query returned 0 rows.');
       }
 
-      const uniqueTickers = [...new Set(results.map(t => t.ticker).filter(t => t && t.toUpperCase() !== 'CASH'))];
-      const unmapped = uniqueTickers.filter(t => !assetMappings[t.toUpperCase()]);
-
-      if (unmapped.length > 0) {
-        setUnmappedTickers(unmapped);
-        setPendingTxs(results);
-        setStatus('mapping');
-        return;
-      }
-
+      // IBKR reports real exchange symbols, which the pricing engine resolves
+      // directly - no per-ticker confirmation step needed. Any saved mappings
+      // are still applied for tickers the user has previously renamed.
       applyMappingsAndReview(results, assetMappings);
     } catch (err) {
       setErrorMsg(err.message || 'Failed to sync with IBKR.');
@@ -237,16 +185,6 @@ export default function IbkrImport() {
 
       addLog(`Found ${parsed.length} raw transactions. Stamping historical USD/PKR rates...`);
       const stamped = await stampHistoricalRates(parsed, addLog);
-
-      const uniqueTickers = [...new Set(stamped.map(t => t.ticker).filter(t => t && t.toUpperCase() !== 'CASH'))];
-      const unmapped = uniqueTickers.filter(t => !assetMappings[t.toUpperCase()]);
-
-      if (unmapped.length > 0) {
-        setUnmappedTickers(unmapped);
-        setPendingTxs(stamped);
-        setStatus('mapping');
-        return;
-      }
 
       applyMappingsAndReview(stamped, assetMappings);
     } catch (err) {
@@ -626,11 +564,11 @@ export default function IbkrImport() {
                   </div>
                   <div className="stat-pill">
                     <span className="stat-pill-label">Trades</span>
-                    <span className="stat-pill-value" style={{ color: '#6366f1' }}>{stats.trades}</span>
+                    <span className="stat-pill-value" style={{ color: '#10b981' }}>{stats.trades}</span>
                   </div>
                   <div className="stat-pill">
                     <span className="stat-pill-label">Dividends</span>
-                    <span className="stat-pill-value" style={{ color: '#a855f7' }}>{stats.dividends}</span>
+                    <span className="stat-pill-value" style={{ color: '#10b981' }}>{stats.dividends}</span>
                   </div>
                   <div className="stat-pill">
                     <span className="stat-pill-label">Taxes</span>
@@ -746,7 +684,7 @@ export default function IbkrImport() {
                                 {item.type}
                               </span>
                             </td>
-                            <td style={{ fontWeight: '700' }}>{item.ticker}</td>
+                            <td style={{ fontWeight: '700' }}>{displayTicker(item.ticker)}</td>
                             <td>{item.shares > 0 ? item.shares.toFixed(2) : '—'}</td>
                             <td>{item.price > 0 ? `$${item.price.toFixed(2)}` : '—'}</td>
                             <td>{item.fees > 0 ? `$${item.fees.toFixed(2)}` : '$0.00'}</td>
@@ -790,16 +728,6 @@ export default function IbkrImport() {
         )}
       </div>
 
-      <AssetMappingModal 
-        isOpen={status === 'mapping'}
-        unmappedTickers={unmappedTickers}
-        onComplete={handleMappingComplete}
-        onCancel={() => {
-          setStatus('idle');
-          setUnmappedTickers([]);
-          setPendingTxs([]);
-        }}
-      />
     </div>
   );
 }

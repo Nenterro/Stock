@@ -6,12 +6,12 @@ import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import FilterModal from '../components/FilterModal';
 import BackendStatusDot from '../components/BackendStatusDot';
-import { formatCurrency, getCurrencySymbol } from '../utils/format';
-import { calculateAllTimeMWR, generatePortfolioTimeSeries } from '../utils/portfolio_math';
+import { formatCurrency, getCurrencySymbol, displayTicker } from '../utils/format';
+import { generatePortfolioTimeSeries } from '../utils/portfolio_math';
 import './Portfolio.css';
 
 export default function Portfolio() {
-  const { transactions, livePrices, exchangeRates } = useData();
+  const { transactions, livePrices, historicalPrices, fxSeries, exchangeRates } = useData();
   const { baseCurrency, setBaseCurrency } = useAppearanceSettings();
 
   const [displayCurrency, setDisplayCurrency] = useState(baseCurrency || 'USD');
@@ -228,13 +228,17 @@ export default function Portfolio() {
     };
   }, [filteredTransactions, livePrices, exchangeRates, displayCurrency, filterState]);
 
+    // Both figures come from the same daily series the Graph page draws, so the
+    // two pages always report identical returns.
     const { mwrPercent, twrPercent } = useMemo(() => {
       const currentFxRate = exchangeRates?.PKR || 278.0;
-      const mwr = calculateAllTimeMWR(filteredTransactions, totalMarketValue, displayCurrency, currentFxRate);
-      const series = generatePortfolioTimeSeries(filteredTransactions, livePrices, displayCurrency, currentFxRate);
-      const twr = series.length > 0 ? series[series.length - 1].twrPct : 0;
-      return { mwrPercent: mwr.cumulative, twrPercent: twr };
-    }, [filteredTransactions, totalMarketValue, displayCurrency, exchangeRates, livePrices]);
+      const series = generatePortfolioTimeSeries(
+        filteredTransactions, livePrices, historicalPrices, displayCurrency, currentFxRate, fxSeries
+      );
+      if (series.length === 0) return { mwrPercent: 0, twrPercent: 0 };
+      const last = series[series.length - 1];
+      return { mwrPercent: last.mwrPct, twrPercent: last.twrPct };
+    }, [filteredTransactions, displayCurrency, exchangeRates, livePrices, historicalPrices, fxSeries]);
 
   // Search filter
   const displayedPositions = useMemo(() => {
@@ -277,7 +281,7 @@ export default function Portfolio() {
           fontSize: '12px',
           fontWeight: 700,
           cursor: 'pointer',
-          background: displayCurrency === 'USD' ? 'var(--accent-color, #6366f1)' : 'transparent',
+          background: displayCurrency === 'USD' ? 'var(--accent-color, #10b981)' : 'transparent',
           color: displayCurrency === 'USD' ? '#fff' : 'var(--text-secondary)',
           transition: 'all 0.2s ease',
           display: 'flex',
@@ -298,7 +302,7 @@ export default function Portfolio() {
           fontSize: '12px',
           fontWeight: 700,
           cursor: 'pointer',
-          background: displayCurrency === 'PKR' ? 'var(--accent-color, #6366f1)' : 'transparent',
+          background: displayCurrency === 'PKR' ? 'var(--accent-color, #10b981)' : 'transparent',
           color: displayCurrency === 'PKR' ? '#fff' : 'var(--text-secondary)',
           transition: 'all 0.2s ease',
           display: 'flex',
@@ -481,7 +485,7 @@ export default function Portfolio() {
                 <div key={p.ticker} className="position-card">
                   <div className="position-info">
                     <div className="position-symbol-row">
-                      <span className="position-symbol">{p.ticker}</span>
+                      <span className="position-symbol">{displayTicker(p.ticker)}</span>
                       <span className="position-portfolio-tag">{p.portfolio}</span>
                     </div>
                     <span className="position-name">{p.assetName}</span>

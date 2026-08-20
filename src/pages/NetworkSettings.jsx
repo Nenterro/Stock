@@ -86,7 +86,7 @@ export default function NetworkSettings() {
               disabled={testing}
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px', 
-                background: 'rgba(99,102,241,0.15)', color: '#6366f1', 
+                background: 'rgba(16,185,129,0.15)', color: '#10b981', 
                 border: 'none', padding: '8px 16px', borderRadius: '8px',
                 cursor: testing ? 'not-allowed' : 'pointer', fontWeight: '500', fontSize: '14px'
               }}

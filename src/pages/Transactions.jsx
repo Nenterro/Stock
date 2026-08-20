@@ -10,6 +10,8 @@ import AddTransactionModal from '../components/AddTransactionModal';
 import UnifiedDropdown from '../components/UnifiedDropdown';
 import UnifiedCalendar from '../components/UnifiedCalendar';
 import FilterModal from '../components/FilterModal';
+import { displayTicker, getCurrencySymbol } from '../utils/format';
+import { transactionCurrency } from '../utils/transactions';
 import './Transactions.css';
 
 const PERIODS = ['All Time', 'This Month', 'Last Month', 'Last 3 Months', 'This Year', 'Custom Range'];
@@ -21,9 +23,9 @@ const getTypeDetails = (type) => {
     case 'sell': return { icon: ArrowUpRight, color: '#f59e0b' }; 
     case 'deposit': return { icon: Plus, color: '#10b981' }; 
     case 'withdrawal': return { icon: ArrowUpRight, color: '#ef4444' }; 
-    case 'dividend': return { icon: RefreshCcw, color: '#8b5cf6' }; 
+    case 'dividend': return { icon: RefreshCcw, color: '#10b981' }; 
     case 'tax': return { icon: ArrowDownRight, color: '#ef4444' }; 
-    default: return { icon: ArrowDownRight, color: '#6366f1' }; 
+    default: return { icon: ArrowDownRight, color: '#10b981' }; 
   }
 };
 
@@ -274,14 +276,14 @@ export default function Transactions() {
                         
                         <div className="tx-main">
                           <div className="tx-payee">
-                            {tx.type.charAt(0).toUpperCase() + tx.type.slice(1).toLowerCase()} {tx.ticker ? `- ${tx.ticker}` : ''}
+                            {tx.type.charAt(0).toUpperCase() + tx.type.slice(1).toLowerCase()} {tx.ticker ? `- ${displayTicker(tx.ticker)}` : ''}
                           </div>
                           <div className="tx-meta">
                             <span className="tx-category" style={{ color: color }}>{tx.portfolio}</span>
                             {tx.shares > 0 && (
                               <>
                                 <span className="tx-dot">•</span>
-                                <span className="tx-account">{tx.shares} @ ${tx.price?.toFixed(2)}</span>
+                                <span className="tx-account">{tx.shares} @ {getCurrencySymbol(transactionCurrency(tx))}{tx.price?.toFixed(2)}</span>
                               </>
                             )}
                           </div>
@@ -290,7 +292,7 @@ export default function Transactions() {
 
                         <div className="tx-right">
                           <div className={`tx-amount ${isExpense ? 'expense' : 'income'}`}>
-                            ${displayAmount?.toFixed(2) || '0.00'}
+                            {getCurrencySymbol(transactionCurrency(tx))}{displayAmount?.toFixed(2) || '0.00'}
                           </div>
                           <div className="tx-actions">
                             <button 

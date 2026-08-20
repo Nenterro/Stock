@@ -10,7 +10,8 @@ import Transactions from './pages/Transactions';
 import SecuritySettings from './pages/SecuritySettings';
 import PortfoliosSettings from './pages/PortfoliosSettings';
 import IbkrImport from './pages/IbkrImport';
-import BudgetImport from './pages/BudgetImport';
+import CsvImport from './pages/CsvImport';
+import KtradeImport from './pages/KtradeImport';
 import Login from './pages/Login';
 import NetworkSettings from './pages/NetworkSettings';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -35,7 +36,10 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="settings/import" element={<IbkrImport />} />
           <Route path="settings/import/ibkr" element={<IbkrImport />} />
-          <Route path="settings/import/budget" element={<BudgetImport />} />
+          <Route path="settings/import/csv" element={<CsvImport />} />
+          {/* Old path kept so existing links/bookmarks still resolve. */}
+          <Route path="settings/import/budget" element={<CsvImport />} />
+          <Route path="settings/import/ktrade" element={<KtradeImport />} />
           <Route path="settings/security" element={<SecuritySettings />} />
           <Route path="settings/portfolios" element={<PortfoliosSettings />} />
           <Route path="settings/network" element={<NetworkSettings />} />

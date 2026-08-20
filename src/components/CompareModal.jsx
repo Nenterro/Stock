@@ -69,7 +69,7 @@ export default function CompareModal({ selectedBenchmarks = [], onApply, onClose
       <div className="compare-modal" onClick={e => e.stopPropagation()}>
         <div className="compare-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <TrendingUp size={20} style={{ color: 'var(--accent-color, #6366f1)' }} />
+            <TrendingUp size={20} style={{ color: 'var(--accent-color, #10b981)' }} />
             <h2>Compare Performance</h2>
           </div>
           <button className="icon-btn close-btn" onClick={onClose}>
