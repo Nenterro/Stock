@@ -15,10 +15,12 @@ Everything here is frontend: `src/`, `public/`, `index.html`, the Vite and
 Vercel config.
 
 - Worked on locally, on the dev machine.
-- Committed and pushed to `main` on GitHub.
-- **Vercel watches `main` and deploys from it.** Pushing is the deploy.
+- Committed and pushed to **`main`** on GitHub.
+- **Vercel builds `main` and nothing else.** Pushing to `main` is the deploy.
 
-A frontend change is not live until it is pushed.
+Work on a branch if you like, but nothing is live until it reaches `main`. A
+commit sitting on a feature branch is not deployed, however finished it looks,
+and neither is one sitting unpushed on a local `main`.
 
 ### Backend — the home server only
 
