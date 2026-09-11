@@ -28,3 +28,11 @@ dist-ssr
 
 # Throwaway analysis and patch scripts
 scratch/
+
+# Backend. The quotes/import API lives solely on the home server, in
+# ~/Docker/stock-api, and deploys by editing there and rebuilding the
+# container. This repo is what Vercel builds, and Vercel only serves the
+# frontend - tracking the backend here gave one service two copies with
+# nothing keeping them in step.
+/backend/
+CLAUDE.local.md
