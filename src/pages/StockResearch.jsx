@@ -46,6 +46,14 @@ const SIGNAL_TONE = {
   'mid-range': 'info'
 };
 
+// Charts use adjusted closes (a split is not a crash), re-based so the last
+// point is today's real price.
+function adjusted(points) {
+  const last = points[points.length - 1];
+  const scale = last && last.adjClose > 0 ? last.price / last.adjClose : 1;
+  return points.map((p) => ({ ...p, price: (p.adjClose > 0 ? p.adjClose : p.price) * scale }));
+}
+
 function sma(points, n) {
   const out = new Array(points.length).fill(null);
   let sum = 0;
@@ -115,7 +123,7 @@ export default function StockResearch() {
   }, [transactions, livePrices, exchangeRates, fxSeries, symbol, market.fundHoldings, market.fundamentals]);
 
   const chart = useMemo(() => {
-    const pts = history?.history || [];
+    const pts = adjusted(history?.history || []);
     if (pts.length < 2) return [];
     const s50 = sma(pts, 50);
     const s200 = sma(pts, 200);
@@ -195,7 +203,7 @@ export default function StockResearch() {
       {!loading && !fund && !tech && <Notice>No data found for {symbol}. Check the ticker, or the backend may be unreachable.</Notice>}
 
       {chart.length > 1 && (
-        <Panel title="Price" subtitle={`${ccy} closes with 50- and 200-day averages`} action={<Segmented label="Range" options={['3M', '1Y', '5Y']} value={range} onChange={setRange} />}>
+        <Panel title="Price" subtitle={`${ccy} closes adjusted for splits, bonuses and dividends, with 50- and 200-day averages`} action={<Segmented label="Range" options={['3M', '1Y', '5Y']} value={range} onChange={setRange} />}>
           <div className="rs-chart" role="img" aria-label={`${symbol} price history`}>
             <ResponsiveContainer>
               <ComposedChart data={chart} margin={{ top: 8, right: 8, bottom: 0, left: -4 }}>

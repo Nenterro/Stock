@@ -478,7 +478,9 @@ export function benchmarkInCurrency(history = [], nativeCurrency, displayCurrenc
     .map((p) => {
       const day = toDayStr(p.date);
       const rate = fxAt(dayStrToMs(day));
-      return { date: day, price: convertAmount(Number(p.price), nativeCurrency, displayCurrency, rate) };
+      // Adjusted close where available: a split or dividend is not a loss.
+      const px = Number(p.adjClose) > 0 ? Number(p.adjClose) : Number(p.price);
+      return { date: day, price: convertAmount(px, nativeCurrency, displayCurrency, rate) };
     })
     .filter((p) => p.price > 0);
 }
@@ -563,8 +565,9 @@ export function correlationMatrix(historicalPrices = {}, tickers = [], days = 36
   for (const [t, h] of Object.entries(series)) {
     const m = new Map();
     const pts = h.filter((p) => toDayStr(p.date) >= since);
+    const px = (p) => (Number(p.adjClose) > 0 ? Number(p.adjClose) : Number(p.price));
     for (let i = 1; i < pts.length; i++) {
-      if (pts[i - 1].price > 0) m.set(toDayStr(pts[i].date), pts[i].price / pts[i - 1].price - 1);
+      if (px(pts[i - 1]) > 0) m.set(toDayStr(pts[i].date), px(pts[i]) / px(pts[i - 1]) - 1);
     }
     rets[t] = m;
   }
