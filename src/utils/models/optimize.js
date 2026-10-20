@@ -88,17 +88,43 @@ export function stats(w, mu, S, rf = 0) {
 
 /* ---------------------------------------------------------------- projection */
 
-/** Project v onto { l <= w <= u, sum w = 1 } exactly (bisection on the shift). */
+/**
+ * Project v onto { l <= w <= u, sum w = 1 } exactly.
+ *
+ * w_i(tau) = clip(v_i - tau, l_i, u_i) and sum w(tau) is piecewise linear and
+ * non-increasing in tau, with kinks at v_i - u_i and v_i - l_i. Sort the kinks,
+ * find the segment where the sum crosses 1, and solve the linear piece:
+ * O(n log n) and exact, where bisection needed ~100 passes over v.
+ */
 function projectBoxBudget(v, l, u) {
-  const f = (tau) => v.reduce((s, x, i) => s + Math.min(u[i], Math.max(l[i], x - tau)), 0) - 1;
-  let lo = Math.min(...v.map((x, i) => x - u[i])) - 1;
-  let hi = Math.max(...v.map((x, i) => x - l[i])) + 1;
-  for (let k = 0; k < 100; k++) {
-    const mid = (lo + hi) / 2;
-    if (f(mid) > 0) lo = mid;
-    else hi = mid;
+  const n = v.length;
+  const sumAt = (tau) => {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += Math.min(u[i], Math.max(l[i], v[i] - tau));
+    return s;
+  };
+  const kinks = [];
+  for (let i = 0; i < n; i++) kinks.push(v[i] - u[i], v[i] - l[i]);
+  kinks.sort((a, b) => a - b);
+  // sum is decreasing in tau: find adjacent kinks bracketing sum = 1.
+  let lo = kinks[0];
+  let hi = kinks[kinks.length - 1];
+  if (sumAt(lo) <= 1) hi = lo;
+  else if (sumAt(hi) >= 1) lo = hi;
+  else {
+    let a = 0;
+    let b = kinks.length - 1;
+    while (b - a > 1) {
+      const m = (a + b) >> 1;
+      if (sumAt(kinks[m]) > 1) a = m;
+      else b = m;
+    }
+    lo = kinks[a];
+    hi = kinks[b];
   }
-  const tau = (lo + hi) / 2;
+  const sLo = sumAt(lo);
+  const sHi = sumAt(hi);
+  const tau = sLo === sHi ? lo : lo + ((sLo - 1) * (hi - lo)) / (sLo - sHi);
   return v.map((x, i) => Math.min(u[i], Math.max(l[i], x - tau)));
 }
 
@@ -128,7 +154,7 @@ export function project(v, l, u, groups = [], iters = 400) {
       change += p.reduce((a, pi, i) => a + Math.abs(pi - x[i]), 0);
       x = p;
     }
-    if (change < 1e-12) break;
+    if (change < 1e-11) break;
   }
   // Finish on the box+budget set so bounds and the budget hold exactly.
   return projectBoxBudget(x, l, u);
@@ -173,7 +199,7 @@ export function meanVariance({ mu, S, lambda = 3, lower, upper, groups = [], w0 
     const moved = wNext.reduce((a, wi, i) => a + Math.abs(wi - w[i]), 0);
     w = wNext;
     t = tNext;
-    if (moved < 1e-10) break;
+    if (moved < 1e-8) break;
   }
   return w;
 }
@@ -181,7 +207,9 @@ export function meanVariance({ mu, S, lambda = 3, lower, upper, groups = [], w0 
 /** Highest Sharpe ratio portfolio within the constraints (search over lambda). */
 export function maxSharpe({ mu, S, rf = 0, lower, upper, groups = [] }) {
   let best = null;
-  for (const lambda of [0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64]) {
+  // Sharpe is unimodal along the efficient frontier; a coarse grid with warm
+  // starts finds the peak to well within estimation error.
+  for (const lambda of [0.75, 1.5, 2.5, 4, 6, 10, 16, 32]) {
     const w = meanVariance({ mu, S, lambda, lower, upper, groups, w0: best?.w });
     const s = stats(w, mu, S, rf);
     if (!best || (s.sharpe ?? -Infinity) > (best.sharpe ?? -Infinity)) best = { w, lambda, sharpe: s.sharpe };
