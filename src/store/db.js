@@ -16,6 +16,19 @@ export const settingsStore = localforage.createInstance({
   storeName: 'stock_settings'
 });
 
+// Analyses written by Claude through the MCP server (mcp/), read-mostly here.
+export const insightsStore = localforage.createInstance({
+  name: 'StockTracker',
+  storeName: 'stock_insights'
+});
+
+// Watchlist entries, target allocation, per-symbol notes and analysis
+// settings - one record each, shared with the MCP server.
+export const researchStore = localforage.createInstance({
+  name: 'StockTracker',
+  storeName: 'stock_research'
+});
+
 // --- Transactions API ---
 
 export async function getTransactions() {

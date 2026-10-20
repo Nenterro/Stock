@@ -1,10 +1,18 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Portfolio from './pages/Portfolio';
 import Graph from './pages/Graph';
-import Analytics from './pages/Analytics';
 import Watchlist from './pages/Watchlist';
+import Insights from './pages/Insights';
+
+// Research pages carry the charting and analytics weight; load them on demand.
+const Analytics = lazy(() => import('./pages/Analytics'));
+const Screener = lazy(() => import('./pages/Screener'));
+const Planner = lazy(() => import('./pages/Planner'));
+const StockResearch = lazy(() => import('./pages/StockResearch'));
+const page = (el) => <Suspense fallback={<div className="rs-page" aria-busy="true" />}>{el}</Suspense>;
 import Settings from './pages/Settings';
 import Transactions from './pages/Transactions';
 import SecuritySettings from './pages/SecuritySettings';
@@ -30,8 +38,12 @@ export default function App() {
           <Route index element={<Home />} />
           <Route path="portfolio" element={<Portfolio />} />
           <Route path="graph" element={<Graph />} />
-          <Route path="analytics" element={<Analytics />} />
+          <Route path="analytics" element={page(<Analytics />)} />
           <Route path="watchlist" element={<Watchlist />} />
+          <Route path="screener" element={page(<Screener />)} />
+          <Route path="insights" element={<Insights />} />
+          <Route path="planner" element={page(<Planner />)} />
+          <Route path="research/:symbol" element={page(<StockResearch />)} />
           <Route path="transactions" element={<Transactions />} />
           <Route path="settings" element={<Settings />} />
           <Route path="settings/import" element={<IbkrImport />} />

@@ -1,0 +1,20 @@
+{
+  "name": "stock-tracker-mcp",
+  "private": true,
+  "version": "1.0.0",
+  "description": "MCP server that lets Claude read and write Stock Tracker data",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node scripts/check.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "pocketbase": "^0.21.5",
+    "zod": "^4.6.7"
+  }
+}

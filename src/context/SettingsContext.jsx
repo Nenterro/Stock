@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import * as db from '../store/db';
 import { syncAll } from '../store/sync';
 
@@ -9,6 +9,8 @@ const DEFAULT_FILTER_STATE = {
   excludedTickers: new Set(),
   excludedTypes: new Set(),
 };
+
+const KNOWN_SECTIONS = ['dashboard', 'transactions', 'graph', 'appearance', 'security'];
 
 const DEFAULT_SETTINGS = {
   dashboard: { period: 'All Time', customRange: { start: null, end: null }, filters: { ...DEFAULT_FILTER_STATE } },
@@ -36,12 +38,16 @@ const deserializeFilters = (saved) => ({
 export function SettingsProvider({ children }) {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [isLoaded, setIsLoaded] = useState(false);
+  // Config sections this context does not manage. Saving used to rebuild the
+  // config from the known sections only, silently deleting anything else.
+  const extraConfig = useRef({});
 
   const reloadSettings = useCallback(async () => {
     try {
       const record = await db.settingsStore.getItem('stocksettings123');
       if (record && record.config) {
         const config = record.config;
+        extraConfig.current = Object.fromEntries(Object.entries(config).filter(([k]) => !KNOWN_SECTIONS.includes(k)));
         setSettings({
           dashboard: { ...DEFAULT_SETTINGS.dashboard, ...config.dashboard, filters: deserializeFilters(config.dashboard?.filters) },
           transactions: { ...DEFAULT_SETTINGS.transactions, ...config.transactions, filters: deserializeFilters(config.transactions?.filters) },
@@ -63,6 +69,7 @@ export function SettingsProvider({ children }) {
     setSettings(newSettings);
     try {
       const configToSave = {
+        ...extraConfig.current,
         dashboard: { ...newSettings.dashboard, filters: serializeFilters(newSettings.dashboard?.filters) },
         transactions: { ...newSettings.transactions, filters: serializeFilters(newSettings.transactions?.filters) },
         graph: { ...newSettings.graph, filters: serializeFilters(newSettings.graph?.filters) },
@@ -73,7 +80,12 @@ export function SettingsProvider({ children }) {
       const updatedRecord = {
         id: 'stocksettings123',
         config: configToSave,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        // The sync compares remote `updated` against this; without it any
+        // remote copy counted as newer and overwrote unsaved local changes.
+        updatedAt: new Date().toISOString(),
+        // Without this the sync never pushed settings anywhere.
+        pendingSync: true
       };
       
       await db.settingsStore.setItem('stocksettings123', updatedRecord);

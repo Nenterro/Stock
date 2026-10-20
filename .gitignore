@@ -36,3 +36,6 @@ scratch/
 # nothing keeping them in step.
 /backend/
 CLAUDE.local.md
+
+# MCP server credentials (PocketBase login, E2EE PIN, backend write token).
+mcp/.env

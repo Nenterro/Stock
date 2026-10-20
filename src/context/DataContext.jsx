@@ -16,6 +16,8 @@ const HISTORY_TTL = 6 * 60 * 60 * 1000; // 6 hours - daily closes only move once
 export function DataProvider({ children }) {
   const [transactions, setTransactions] = useState([]);
   const [portfolios, setPortfolios] = useState([]);
+  const [insights, setInsights] = useState([]);
+  const [research, setResearch] = useState([]);
   const [exchangeRates, setExchangeRates] = useState({});
   const [livePrices, setLivePrices] = useState({});
   const [historicalPrices, setHistoricalPrices] = useState({});
@@ -31,6 +33,10 @@ export function DataProvider({ children }) {
       
       let ports = await db.getItems(db.portfoliosStore);
       setPortfolios(ports);
+
+      const ins = await db.getItems(db.insightsStore);
+      setInsights(ins.sort((a, b) => String(b.meta?.savedAt || b.updatedAt || '').localeCompare(String(a.meta?.savedAt || a.updatedAt || ''))));
+      setResearch(await db.getItems(db.researchStore));
     } catch (err) {
       console.error("Failed to load local database:", err);
     }
@@ -101,7 +107,7 @@ export function DataProvider({ children }) {
         await setE2EE(true);
         setUnlocked(true);
 
-        const stores = [db.transactionsStore, db.portfoliosStore, db.settingsStore];
+        const stores = [db.transactionsStore, db.portfoliosStore, db.settingsStore, db.insightsStore, db.researchStore];
         for (const store of stores) {
           const keys = await store.keys();
           for (const key of keys) {
@@ -320,6 +326,20 @@ export function DataProvider({ children }) {
     syncInBackground();
   };
 
+  // Research records are { kind, symbol, data } - the shape the MCP server
+  // writes - so either side can edit the other's entries.
+  const saveResearch = useCallback(async (kind, symbol, dataPatch, { replace = false } = {}) => {
+    const key = String(symbol || '*').toUpperCase();
+    const existing = research.find((r) => r.kind === kind && String(r.symbol || '').toUpperCase() === key);
+    const item = {
+      ...(existing || {}),
+      kind,
+      symbol: key,
+      data: { ...(replace ? {} : existing?.data || {}), ...dataPatch, updatedAt: new Date().toISOString() }
+    };
+    await updateDataItem(db.researchStore, item, setResearch);
+  }, [research]);
+
   const handlePinSubmit = async (enteredPin) => {
     if (enteredPin.length === 4) {
       const isValid = await verifyPinWithData(enteredPin);
@@ -503,6 +523,9 @@ export function DataProvider({ children }) {
     <DataContext.Provider value={{ 
       transactions, portfolios, exchangeRates, setExchangeRates, livePrices, historicalPrices, fxSeries, historyLoading, backendStatus, syncStatus, isLoading, loadData,
       addTransaction, updateTransaction, deleteTransaction, saveTransactionsBatch,
+      insights, research, saveResearch,
+      removeResearch: (id) => deleteDataItem(db.researchStore, id, setResearch),
+      deleteInsight: (id) => deleteDataItem(db.insightsStore, id, setInsights),
       savePortfolio: (item) => updateDataItem(db.portfoliosStore, item, setPortfolios),
       deletePortfolio: (id) => deleteDataItem(db.portfoliosStore, id, setPortfolios),
     }}>

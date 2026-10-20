@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LineChart, BarChart2, Eye, Pin, PinOff, Plus, Home, Menu, Briefcase, MoreHorizontal, Settings } from 'lucide-react';
+import { LineChart, BarChart2, Eye, Pin, PinOff, Plus, Home, Menu, Briefcase, MoreHorizontal, Settings, Filter, Sparkles, Target } from 'lucide-react';
 import AddTransactionModal from './AddTransactionModal';
 import MoreMenuModal from './MoreMenuModal';
 import { useData } from '../context/DataContext';
@@ -11,8 +11,11 @@ const NAV_ITEMS = [
   { path: '/', label: 'Home', icon: Home },
   { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
   { path: '/graph', label: 'Graph', icon: LineChart },
-  { path: '/analytics', label: 'Analytics', icon: BarChart2 },
+  { path: '/analytics', label: 'X-ray', icon: BarChart2 },
   { path: '/watchlist', label: 'Watchlist', icon: Eye },
+  { path: '/screener', label: 'Screener', icon: Filter },
+  { path: '/insights', label: 'Insights', icon: Sparkles },
+  { path: '/planner', label: 'Planner', icon: Target },
   { path: '/transactions', label: 'Transactions', icon: Menu },
 ];
 
@@ -59,7 +62,7 @@ function Sidebar({ isPinned, togglePin, onOpenAdd, backendStatus }) {
             <span className="nav-label">Add Transaction</span>
           </button>
           {NAV_ITEMS.map((item) => (
-            <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title={item.label}>
+            <NavLink key={item.path} to={item.path} end={item.path === "/"} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title={item.label}>
               <item.icon size={20} className="nav-icon" />
               <span className="nav-label">{item.label}</span>
             </NavLink>
@@ -104,7 +107,7 @@ function BottomNav({ onOpenAdd, onOpenMore }) {
         </button>
       </div>
 
-      <NavLink to="/analytics" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title="Analytics" onClick={() => handleNavClick('Analytics')}>
+      <NavLink to="/analytics" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title="X-ray" onClick={() => handleNavClick('X-ray')}>
         <BarChart2 size={24} />
       </NavLink>
       

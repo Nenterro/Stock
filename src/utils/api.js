@@ -15,6 +15,7 @@ const FX_CACHE_KEY = 'stock_tracker_fx_rates';
 const ONE_HOUR = 60 * 60 * 1000;
 
 let lastSuccessfulBackend = null;
+const NOT_FOUND = Symbol('not found');
 
 // Generic helper to fetch from Backend Home Server with automatic failover
 export async function fetchFromBackend(path, options = {}) {
@@ -33,6 +34,10 @@ export async function fetchFromBackend(path, options = {}) {
   const attempt = async (baseUrl) => {
     const url = `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
     const res = await fetch(url, { ...fetchOptions, signal: buildSignal() });
+    // A 404 is the server answering "no such thing" (a symbol with no
+    // history, a stock that is not a fund) - not a reason to try every
+    // other host, which only adds timeouts.
+    if (res.status === 404) return NOT_FOUND;
     if (!res.ok) return null;
     return res.json();
   };
@@ -45,6 +50,10 @@ export async function fetchFromBackend(path, options = {}) {
   for (const baseUrl of ordered) {
     try {
       const data = await attempt(baseUrl);
+      if (data === NOT_FOUND) {
+        lastSuccessfulBackend = baseUrl;
+        return null;
+      }
       if (data !== null) {
         lastSuccessfulBackend = baseUrl;
         return data;
@@ -342,4 +351,47 @@ export async function parseKtradePdf(file) {
     }
   }
   return { error: 'Could not reach the backend to parse that PDF' };
+}
+
+// --- Research: fundamentals, fund look-through, technicals, screener -------
+
+const toCsv = (symbols) =>
+  [...new Set(symbols.map((s) => String(s || '').trim().toUpperCase()).filter((s) => s && s !== 'CASH'))].join(',');
+
+export async function fetchFundamentals(symbol) {
+  return fetchFromBackend(`/api/fundamentals?symbol=${encodeURIComponent(symbol)}`, { timeout: 30000 });
+}
+
+export async function fetchFundamentalsBatch(symbols = []) {
+  if (!symbols.length) return {};
+  const data = await fetchFromBackend(`/api/fundamentals/batch?symbols=${encodeURIComponent(toCsv(symbols))}`, { timeout: 90000 });
+  return data?.results || {};
+}
+
+export async function fetchFundHoldings(symbol) {
+  return fetchFromBackend(`/api/holdings?symbol=${encodeURIComponent(symbol)}`, { timeout: 30000 });
+}
+
+export async function fetchFundHoldingsBatch(symbols = []) {
+  if (!symbols.length) return {};
+  const data = await fetchFromBackend(`/api/holdings/batch?symbols=${encodeURIComponent(toCsv(symbols))}`, { timeout: 90000 });
+  return data?.results || {};
+}
+
+export async function fetchTechnicals(symbol, benchmark) {
+  const q = benchmark ? `&benchmark=${encodeURIComponent(benchmark)}` : '';
+  return fetchFromBackend(`/api/technicals?symbol=${encodeURIComponent(symbol)}${q}`, { timeout: 30000 });
+}
+
+export async function fetchTechnicalsBatch(symbols = []) {
+  if (!symbols.length) return {};
+  const data = await fetchFromBackend(`/api/technicals/batch?symbols=${encodeURIComponent(toCsv(symbols))}`, { timeout: 90000 });
+  return data?.results || {};
+}
+
+export async function fetchScreener(params = {}) {
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => [k, String(v)])
+  );
+  return fetchFromBackend(`/api/screener?${qs.toString()}`, { timeout: 30000 });
 }

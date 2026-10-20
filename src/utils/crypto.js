@@ -151,7 +151,7 @@ export async function verifyPinWithData(pin) {
 
   // Fallback: try remote PocketBase records
   if (pb.baseUrl && pb.authStore.isValid) {
-    const collections = ['settings', 'transactions', 'portfolios'];
+    const collections = ['stock_settings', 'stock_transactions', 'stock_portfolios'];
     const usersId = pb.authStore.model?.id;
     for (const coll of collections) {
       try {

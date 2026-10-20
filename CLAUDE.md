@@ -55,11 +55,52 @@ blaming the code for stale prices.
 Gmail credentials for the KTrade importer are in `~/Docker/stock-api/.env`,
 never in source control.
 
+## Research features and the MCP server
+
+Claude is the analyst here, through Claude Code rather than an API key: the
+`stock-tracker` MCP server in `mcp/` (registered in `.mcp.json`) gives any
+Claude Code session in this repo tools to read the portfolio and market data
+and to write analyses back into the app.
+
+- `mcp/` runs on the dev machine, not the server. It is the one exception to
+  "no backend code here": it is a local tool, and it imports the app's own
+  `src/utils/portfolio_math.js` and `portfolio_analytics.js` so Claude and the
+  app compute identical numbers. Keep those two files free of browser and
+  React imports.
+- Credentials live in `mcp/.env` (gitignored; template in `mcp/.env.example`):
+  PocketBase login, the E2EE PIN, and the backend write token. The server
+  decrypts and re-encrypts exactly like `src/utils/crypto.js` - change one,
+  change both.
+- What Claude writes lands in two PocketBase collections synced like the rest:
+  `stock_insights` (analyses, shown on Insights and per-symbol pages) and
+  `stock_research` (`{ kind, symbol, data }` records: `watch`, `note`,
+  `targets` (symbol `*`), `settings` (symbol `*`)). Transaction writes are off
+  unless `ALLOW_TRANSACTION_WRITES=true`, and always preview first.
+- Smoke test: `node mcp/scripts/check.js [tool] ['{json args}']`.
+
+The backend side of the research features (all in `~/Docker/stock-api/lib/`):
+`fundamentals.js`, `holdings.js` (fund look-through), `technicals.js`,
+`screener.js` (nightly snapshot in `data/screener.json`), `overrides.js`
+(manual fund/fundamentals data, `data/overrides.json`), `taxonomy.js` (one
+sector vocabulary across PSX, Yahoo and justETF). Write routes need
+`Authorization: Bearer $STOCK_API_WRITE_TOKEN`.
+
+Conventions every layer relies on: ratios and returns are fractions (0.12 =
+12%), money is in full currency units (PSX publishes thousands; scaled on the
+way in), missing data is `null` never `0`, and every fundamentals or holdings
+payload carries `sources` and an as-of date.
+
+Data sources worth knowing before debugging: since October 2026
+dps.psx.com.pk answers 403/404 on `/timeseries` and `/symbols`, so PSX price
+history and index history come from Sarmaaya's REST API; PSX company and ETF
+pages still scrape fine and supply fundamentals and index constituents.
+
 ## This repo
 
 ```bash
 npm run dev
 npx vite build
+npm test          # analytics unit tests (node:test)
 ```
 
 - The repo is **public**. No secrets, tokens, internal addresses or

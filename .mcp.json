@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "stock-tracker": {
+      "command": "node",
+      "args": ["mcp/server.js"]
+    }
+  }
+}

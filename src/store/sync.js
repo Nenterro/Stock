@@ -53,12 +53,16 @@ export async function connectPocketBase() {
 // PocketBase auto-generates 15-char IDs. We store the mapping so
 // we can update the correct remote record instead of creating duplicates.
 
+// V2: ids saved under the old key point at records in the budget app's
+// `settings` collection and must never be updated from here again.
+const SETTINGS_PB_ID_KEY = 'STOCK_SETTINGS_PB_ID_V2';
+
 function getSettingsPbId() {
-  return localStorage.getItem('STOCK_SETTINGS_PB_ID') || null;
+  return localStorage.getItem(SETTINGS_PB_ID_KEY) || null;
 }
 
 function setSettingsPbId(pbId) {
-  localStorage.setItem('STOCK_SETTINGS_PB_ID', pbId);
+  localStorage.setItem(SETTINGS_PB_ID_KEY, pbId);
 }
 
 // ─── Helper: get current user ID safely ───
@@ -75,7 +79,11 @@ async function getE2eeState() {
 // ─── Sync a single settings record (special handling for ID mismatch) ───
 async function syncSettingsStore() {
   const store = db.settingsStore;
-  const collectionName = 'settings';
+  // `settings` is the budget app's collection on the same PocketBase. This
+  // store used to read and write it, so stock settings and budget settings
+  // overwrote each other's records. `stock_settings` is the collection the
+  // realtime subscription already listened to.
+  const collectionName = 'stock_settings';
   const e2eeEnabled = await getE2eeState();
   const usersId = getCurrentUserId();
 
@@ -130,7 +138,10 @@ async function syncSettingsStore() {
 
     // ── PHASE 2: Push local pending settings ──
     const localSettings = await store.getItem('stocksettings123');
-    if (localSettings && localSettings.pendingSync) {
+    // Nothing in stock_settings yet (first run after moving off the budget
+    // app's collection): seed it from this device.
+    const seedRemote = remoteSettings.length === 0 && !getSettingsPbId();
+    if (localSettings && (localSettings.pendingSync || seedRemote)) {
       const payload = { ...localSettings };
       delete payload.pendingSync;
       delete payload.updatedAt;
@@ -360,17 +371,21 @@ export async function syncAll() {
   await syncSettingsStore();
   await Promise.all([
     syncDataStore(db.transactionsStore, 'stock_transactions'),
-    syncDataStore(db.portfoliosStore, 'stock_portfolios')
+    syncDataStore(db.portfoliosStore, 'stock_portfolios'),
+    syncDataStore(db.insightsStore, 'stock_insights'),
+    syncDataStore(db.researchStore, 'stock_research')
   ]);
 }
 
 // Subscribe to real-time events
 export function setupRealtimeSync(onUpdate) {
-  const collections = ['stock_transactions', 'stock_portfolios', 'stock_settings'];
+  const collections = ['stock_transactions', 'stock_portfolios', 'stock_settings', 'stock_insights', 'stock_research'];
   const stores = {
     stock_transactions: db.transactionsStore,
     stock_portfolios: db.portfoliosStore,
-    stock_settings: db.settingsStore
+    stock_settings: db.settingsStore,
+    stock_insights: db.insightsStore,
+    stock_research: db.researchStore
   };
 
   collections.forEach(coll => {
@@ -385,7 +400,7 @@ export function setupRealtimeSync(onUpdate) {
       const e2eeEnabled = await getE2eeState();
 
       if (e.action === 'delete') {
-        if (coll === 'settings') {
+        if (coll === 'stock_settings') {
           // Don't delete local settings on remote delete events
           return;
         }
