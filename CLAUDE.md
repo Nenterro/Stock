@@ -114,6 +114,14 @@ tests), `construct.js` (policy sleeves, views, the end-to-end run),
 `pipeline.js` (data in, everything out). Tests: `npm test` here, and
 `node --test test/` in `~/Docker/stock-api`.
 
+Valuation design choices worth knowing before changing `valuation.js`:
+required return per market is calibrated to the median implied return of
+that market's stocks (so upside is relative to the market; the CMA stays the
+absolute view); US listings of foreign companies are calibrated separately
+against their home market's USD return; unknown ROE (all of PSX) defaults to
+1.25x the market's CMA required return; PSX growth uses profit after tax, not
+EPS, because published PSX EPS isn't restated for splits.
+
 PSX price history is adjusted on the way in (`lib/adjust.js`): weekend rows
 dropped, splits/bonuses/dividends back-adjusted into `adjClose` (event feed
 where it has the event, PSX's 10% circuit breaker to detect the rest). Raw
