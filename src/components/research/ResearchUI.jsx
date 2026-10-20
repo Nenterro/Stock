@@ -34,6 +34,8 @@ export function fmtMoney(v, ccy = 'USD', { compact = false, decimals } = {}) {
 export function fmtPct(v, { digits = 1, signed = false } = {}) {
   if (v == null || !Number.isFinite(v)) return '—';
   const s = (v * 100).toFixed(digits);
+  // A value that rounds to zero shouldn't read as "-0%".
+  if (Number(s) === 0) return `${(0).toFixed(digits)}%`;
   return `${signed && v > 0 ? '+' : ''}${s.replace('-', '−')}%`;
 }
 

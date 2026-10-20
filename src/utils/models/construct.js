@@ -104,6 +104,30 @@ export function constructPortfolio(p) {
     }
     delete eff.pakistan;
   }
+  // Per-asset caps, and sleeves too small to hold their minimum: with two
+  // global stocks capped at 10% each, a 25% global-stocks sleeve can't be
+  // filled. Cap such a sleeve at what its assets can hold and hand the rest to
+  // the global core, rather than failing - early on there are few candidates.
+  const maxStock = p.maxStockWeight ?? 0.1;
+  const lower = assets.map((a) => a.min ?? 0);
+  const upper = assets.map((a) => a.max ?? (a.sleeve === 'globalCore' ? 1 : maxStock));
+  const notes = [];
+  for (const k of Object.keys(eff)) {
+    if (k === 'globalCore' || !has(k)) continue;
+    const cap = assets.reduce((s, a, i) => s + (a.sleeve === k ? upper[i] : 0), 0);
+    if (cap + 1e-9 >= eff[k].target) continue;
+    const to = eff.globalCore && has('globalCore') ? 'globalCore' : null;
+    if (!to) continue;
+    const moved = eff[k].target - Math.min(eff[k].target, cap);
+    notes.push(`${eff[k].name || k} has only ${assets.filter((a) => a.sleeve === k).length} candidate(s) at most ${Math.round(maxStock * 100)}% each, so it is capped at ${Math.round(cap * 100)}%; the other ${Math.round(Math.max(moved, eff[k].min - cap) * 100)}% goes to the global core until there are more names.`);
+    eff[to].target += moved;
+    eff[to].min += eff[k].min - Math.min(eff[k].min, cap);
+    eff[to].max += eff[k].max - Math.min(eff[k].max, cap);
+    eff[k].target = Math.min(eff[k].target, cap);
+    eff[k].min = Math.min(eff[k].min, cap);
+    eff[k].max = Math.min(eff[k].max, cap);
+  }
+
   const present = Object.keys(eff).filter((k) => has(k));
   const tSum = present.reduce((s, k) => s + eff[k].target, 0);
   const groups = present.map((k) => ({
@@ -132,10 +156,6 @@ export function constructPortfolio(p) {
 
   const views = assets.map((a, i) => (a.expected != null ? { index: i, q: a.expected, confidence: a.confidence ?? 0.3 } : null)).filter(Boolean);
   const bl = blackLitterman({ S, wRef, delta, tau, views, rf });
-
-  const maxStock = p.maxStockWeight ?? 0.1;
-  const lower = assets.map((a) => a.min ?? 0);
-  const upper = assets.map((a) => a.max ?? (a.sleeve === 'globalCore' ? 1 : maxStock));
 
   const optimal = meanVariance({ mu: bl.mu, S, lambda: delta, lower, upper, groups, w0: wRef });
   const minVar = meanVariance({ mu: null, S, lambda: 1, lower, upper, groups, w0: wRef });
@@ -170,6 +190,7 @@ export function constructPortfolio(p) {
       filledMonths: rets.filled[a.symbol] || 0
     })),
     dropped: rets.dropped,
+    notes,
     portfolios: {
       recommended: { ...describe(optimal), method: 'Black-Litterman mean-variance within policy constraints' },
       reference: { ...describe(wRef), method: 'policy sleeves, inverse-volatility within each' },

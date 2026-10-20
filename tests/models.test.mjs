@@ -157,3 +157,28 @@ test('asset views: funds use their CMA; stocks are shrunk toward the market', ()
   const p = assetView({ symbol: 'P', currency: 'PKR', impliedReturn: 0.32 }, er);
   close(p.expected, 0.5 * (1.32 / 1.1 - 1) + 0.5 * 0.15);
 });
+
+test('a sleeve with too few candidates is capped, not infeasible', () => {
+  const T = 60;
+  const R = randomReturns(T, [0.04, 0.07, 0.08, 0.09, 0.09], 0.4, 5);
+  const hist = (j) => {
+    let px = 100;
+    return R.map((row, t) => {
+      px *= 1 + row[j];
+      return { date: new Date(Date.UTC(2020, t, 28)).toISOString().slice(0, 10), price: px };
+    });
+  };
+  const assets = [
+    { symbol: 'CORE', sleeve: 'globalCore', currency: 'USD', history: hist(0), expected: 0.07 },
+    { symbol: 'G1', sleeve: 'globalStocks', currency: 'USD', history: hist(1), expected: 0.09 },
+    { symbol: 'G2', sleeve: 'globalStocks', currency: 'USD', history: hist(2), expected: 0.09 },
+    { symbol: 'P1', sleeve: 'pakistan', currency: 'USD', history: hist(3), expected: 0.12 },
+    { symbol: 'P2', sleeve: 'pakistan', currency: 'USD', history: hist(4), expected: 0.12 }
+  ];
+  const out = constructPortfolio({ assets, today: '2025-03-01', maxStockWeight: 0.1 });
+  const rec = out.portfolios.recommended;
+  close(Object.values(rec.weights).reduce((a, b) => a + b, 0), 1, 1e-6);
+  assert.ok(rec.sleeves.globalStocks <= 0.2 + 1e-6);
+  assert.ok(rec.sleeves.pakistan <= 0.2 + 1e-6);
+  assert.ok(out.notes.length === 2, out.notes.join(' | '));
+});

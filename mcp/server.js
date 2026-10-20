@@ -435,6 +435,7 @@ tool(
       },
       pakistanComparison,
       notes: [
+        ...(result.notes || []),
         'Expected returns are model estimates (earnings-yield based), not forecasts; use the ranges in get_expected_returns.',
         'Weights are a starting point for judgement: check Shariah status and theses before acting on single stocks.'
       ]

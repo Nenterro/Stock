@@ -122,6 +122,7 @@ export default function ModelPortfolio({ onUseAsTargets }) {
       {!running && result && (
         <>
           {result.noModels && <Notice>Expected returns haven't been computed yet (they run with the nightly job), so the recommendation is the policy reference portfolio.</Notice>}
+          {result.notes?.map((n) => <Notice key={n}>{n}</Notice>)}
           {!result.noModels && result.missingViews.length > 0 && (
             <Notice>No model view for {result.missingViews.map(displayTicker).join(', ')}: they follow the reference portfolio's implied returns.</Notice>
           )}
