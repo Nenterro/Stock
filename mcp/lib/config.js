@@ -35,9 +35,10 @@ export const config = {
   allowTransactionWrites: /^(1|true|yes)$/i.test(env('ALLOW_TRANSACTION_WRITES', 'false'))
 };
 
-export function missingPocketBaseConfig() {
-  const missing = [];
-  if (!config.pbEmail) missing.push('PB_EMAIL');
-  if (!config.pbPassword) missing.push('PB_PASSWORD');
-  return missing;
+/**
+ * How the server signs in to PocketBase: a password from .env if one is set,
+ * otherwise the Google session saved by scripts/login.js (mcp/.auth.json).
+ */
+export function hasPasswordLogin() {
+  return Boolean(config.pbEmail && config.pbPassword);
 }

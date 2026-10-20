@@ -1,5 +1,6 @@
 import PocketBase from 'pocketbase';
-import { config, missingPocketBaseConfig, ENV_FILE } from './config.js';
+import { config, hasPasswordLogin, ENV_FILE } from './config.js';
+import { readSession, writeSession, SESSION_FILE } from './session.js';
 
 /**
  * The user's own records in PocketBase, decrypted.
@@ -70,12 +71,12 @@ async function reachable(url) {
   }
 }
 
+const LOGIN_HINT = `run "node mcp/scripts/login.js" in the Stock Tracker folder to sign in with Google (or set PB_EMAIL/PB_PASSWORD in ${ENV_FILE}), then restart the MCP server`;
+
 export async function connect() {
   if (pb?.authStore.isValid && userId) return pb;
-  const missing = missingPocketBaseConfig();
-  if (missing.length) {
-    throw new Error(`PocketBase login not configured: set ${missing.join(', ')} in ${ENV_FILE} (see mcp/.env.example), then restart the MCP server.`);
-  }
+  const session = hasPasswordLogin() ? null : readSession();
+  if (!hasPasswordLogin() && !session) throw new Error(`Not signed in to PocketBase: ${LOGIN_HINT}.`);
 
   let url = null;
   for (const candidate of config.pbUrls) {
@@ -88,8 +89,23 @@ export async function connect() {
 
   pb = new PocketBase(url);
   pb.autoCancellation(false);
-  const auth = await pb.collection('users').authWithPassword(config.pbEmail, config.pbPassword);
-  userId = auth.record.id;
+  if (session) {
+    // Google sign-in: reuse the saved session and refresh it, which issues a
+    // fresh token and so keeps the session alive while the server is used.
+    pb.authStore.save(session.token, session.record);
+    try {
+      const refreshed = await pb.collection('users').authRefresh();
+      writeSession({ token: pb.authStore.token, record: refreshed.record, pbUrl: url });
+      userId = refreshed.record.id;
+    } catch (err) {
+      pb.authStore.clear();
+      if ([401, 403, 404].includes(err?.status)) throw new Error(`The saved Google session (${SESSION_FILE}) has expired: ${LOGIN_HINT}.`);
+      throw err;
+    }
+  } else {
+    const auth = await pb.collection('users').authWithPassword(config.pbEmail, config.pbPassword);
+    userId = auth.record.id;
+  }
   if (config.pin) key = await deriveKey(config.pin);
   return pb;
 }
@@ -189,5 +205,12 @@ export async function remove(collection, id) {
 
 export async function whoami() {
   await connect();
-  return { userId, email: pb.authStore.model?.email, pbUrl: pb.baseUrl, encrypted: await isEncryptedAccount(), pinConfigured: Boolean(key) };
+  return {
+    userId,
+    email: pb.authStore.model?.email,
+    pbUrl: pb.baseUrl,
+    login: hasPasswordLogin() ? 'password' : 'google session',
+    encrypted: await isEncryptedAccount(),
+    pinConfigured: Boolean(key)
+  };
 }

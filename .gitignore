@@ -39,3 +39,4 @@ CLAUDE.local.md
 
 # MCP server credentials (PocketBase login, E2EE PIN, backend write token).
 mcp/.env
+mcp/.auth.json

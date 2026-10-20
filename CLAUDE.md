@@ -68,7 +68,11 @@ and to write analyses back into the app.
   app compute identical numbers. Keep those two files free of browser and
   React imports.
 - Credentials live in `mcp/.env` (gitignored; template in `mcp/.env.example`):
-  PocketBase login, the E2EE PIN, and the backend write token. The server
+  the E2EE PIN and the backend write token. The account signs in with
+  Google, so there is no password: `node mcp/scripts/login.js` does the
+  OAuth flow once and saves the session to `mcp/.auth.json` (gitignored),
+  which the server refreshes on every start. If it has gone unused past the
+  token lifetime, run the script again. The server
   decrypts and re-encrypts exactly like `src/utils/crypto.js` - change one,
   change both.
 - What Claude writes lands in two PocketBase collections synced like the rest:

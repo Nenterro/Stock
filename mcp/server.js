@@ -16,7 +16,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { config, missingPocketBaseConfig, ENV_FILE } from './lib/config.js';
+import { config, ENV_FILE } from './lib/config.js';
 import { api } from './lib/api.js';
 import * as store from './lib/store.js';
 import * as pf from './lib/portfolio.js';
@@ -76,14 +76,10 @@ tool(
   },
   async () => {
     const out = { config: { envFile: ENV_FILE, transactionWrites: config.allowTransactionWrites, backendWriteToken: Boolean(config.stockApiToken) } };
-    const missing = missingPocketBaseConfig();
-    if (missing.length) out.pocketbase = { ok: false, error: `Missing ${missing.join(', ')}` };
-    else {
-      try {
-        out.pocketbase = { ok: true, ...(await store.whoami()) };
-      } catch (err) {
-        out.pocketbase = { ok: false, error: err.message };
-      }
+    try {
+      out.pocketbase = { ok: true, ...(await store.whoami()) };
+    } catch (err) {
+      out.pocketbase = { ok: false, error: err.message };
     }
     try {
       const h = await api.health();
