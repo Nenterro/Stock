@@ -4,6 +4,7 @@
  *
  *   node mcp/scripts/check.js                       # status + tool list
  *   node mcp/scripts/check.js get_xray '{"currency":"PKR","sections":["warnings"]}'
+ *   node mcp/scripts/check.js get_xray '{}' --full   # untruncated, for piping
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -16,10 +17,11 @@ const client = new Client({ name: 'check', version: '1.0.0' });
 await client.connect(transport);
 
 const { tools } = await client.listTools();
-console.log(`${tools.length} tools: ${tools.map((t) => t.name).join(', ')}`);
+if (!process.argv.includes('--full')) console.log(`${tools.length} tools: ${tools.map((t) => t.name).join(', ')}`);
 
-const [name = 'stock_status', rawArgs = '{}'] = process.argv.slice(2);
+const full = process.argv.includes('--full');
+const [name = 'stock_status', rawArgs = '{}'] = process.argv.slice(2).filter((a) => a !== '--full');
 const res = await client.callTool({ name, arguments: JSON.parse(rawArgs) });
 const text = res.content?.map((c) => c.text).join('\n') || '';
-console.log(res.isError ? `ERROR ${text}` : text.length > 6000 ? `${text.slice(0, 6000)}\n... (${text.length} chars)` : text);
+console.log(res.isError ? `ERROR ${text}` : !full && text.length > 6000 ? `${text.slice(0, 6000)}\n... (${text.length} chars)` : text);
 await client.close();

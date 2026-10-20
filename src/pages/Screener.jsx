@@ -22,7 +22,9 @@ const SECTORS = [
 
 const TREND_TONE = { uptrend: 'good', downtrend: 'serious', sideways: 'info' };
 
-const DEFAULTS = { market: 'PSX', shariah: true, max_peTTM: '', min_epsGrowth: '', min_dividendYield: '', sector: '', trend: '', min_liquidity: '10', q: '' };
+const DEFAULTS = { market: 'PSX', shariah: true, max_peTTM: '', min_epsGrowth: '', min_dividendYield: '', sector: '', trend: '', country: '', min_liquidity: '10', q: '' };
+
+const COUNTRIES = ['United States', 'United Kingdom', 'Japan', 'Hong Kong', 'Canada', 'Germany', 'Switzerland', 'France', 'Sweden', 'Australia', 'Netherlands', 'Italy', 'Spain', 'Singapore', 'Norway', 'Denmark', 'Finland'];
 
 // Ratio inputs are entered as percentages and sent as fractions.
 const PERCENT_FIELDS = ['min_epsGrowth', 'min_dividendYield'];
@@ -41,9 +43,12 @@ export default function Screener() {
     const t = setTimeout(() => {
       setLoading(true);
       const params = { sort, limit: 300 };
-      if (f.market === 'PSX') params.market = 'PSX';
-      if (f.market === 'International') params.currency = 'USD';
-      if (f.shariah) params.shariah = true;
+      if (f.market === 'PSX') params.scope = 'psx';
+      if (f.market === 'International') params.scope = 'global';
+      // Only PSX stocks carry a Shariah flag; international screening is done
+      // case by case with Claude, so the filter applies to PSX only.
+      if (f.shariah && f.market === 'PSX') params.shariah = true;
+      if (f.country && f.market !== 'PSX') params.country = f.country;
       if (f.max_peTTM) {
         params.max_peTTM = f.max_peTTM;
         params.min_peTTM = 0.01; // a negative P/E is a loss, not a bargain
@@ -51,8 +56,8 @@ export default function Screener() {
       for (const k of PERCENT_FIELDS) if (f[k] !== '') params[k] = Number(f[k]) / 100;
       if (f.sector) params.sector = f.sector;
       if (f.trend) params.trend = f.trend;
-      // PSX liquidity in PKR millions a day; skip for international rows (no volume field).
-      if (f.min_liquidity && f.market === 'PSX') params.min_avgValueTraded20d = Number(f.min_liquidity) * 1e6;
+      // Liquidity: PKR millions a day on PSX, USD millions elsewhere.
+      if (f.min_liquidity && f.market !== 'All') params.min_avgValueTraded20d = Number(f.min_liquidity) * 1e6;
       if (f.q) params.q = f.q;
       fetchScreener(params)
         .then((d) => live && setData(d))
@@ -81,7 +86,7 @@ export default function Screener() {
         <div>
           <h1 className="rs-title">Screener</h1>
           <p className="rs-subtitle">
-            Every PSX equity plus the international list, rebuilt nightly
+            Every PSX equity and every stock above $2B on the markets IBKR offers, rebuilt nightly
             {data?.builtAt ? ` · last built ${new Date(data.builtAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
           </p>
         </div>
@@ -108,15 +113,30 @@ export default function Screener() {
               <input id="sc-dy" className="rs-input" type="number" value={f.min_dividendYield} onChange={set('min_dividendYield')} style={{ width: 80 }} />
             </div>
           )}
+          <div className="rs-field">
+            <label htmlFor="sc-sec">Sector</label>
+            <select id="sc-sec" className="rs-select" value={f.sector} onChange={set('sector')}>
+              <option value="">Any</option>
+              {SECTORS.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+          {f.market !== 'PSX' && (
+            <div className="rs-field">
+              <label htmlFor="sc-cty">Country</label>
+              <select id="sc-cty" className="rs-select" value={f.country} onChange={set('country')}>
+                <option value="">Any</option>
+                {COUNTRIES.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          )}
+          {f.market !== 'All' && (
+            <div className="rs-field">
+              <label htmlFor="sc-liq">Min traded / day ({f.market === 'PSX' ? 'PKR' : 'USD'} m)</label>
+              <input id="sc-liq" className="rs-input" type="number" value={f.min_liquidity} onChange={set('min_liquidity')} style={{ width: 110 }} />
+            </div>
+          )}
           {f.market === 'PSX' && (
             <>
-              <div className="rs-field">
-                <label htmlFor="sc-sec">Sector</label>
-                <select id="sc-sec" className="rs-select" value={f.sector} onChange={set('sector')}>
-                  <option value="">Any</option>
-                  {SECTORS.map((s) => <option key={s}>{s}</option>)}
-                </select>
-              </div>
               <div className="rs-field">
                 <label htmlFor="sc-tr">Trend</label>
                 <select id="sc-tr" className="rs-select" value={f.trend} onChange={set('trend')}>
@@ -126,20 +146,18 @@ export default function Screener() {
                   <option value="downtrend">Downtrend</option>
                 </select>
               </div>
-              <div className="rs-field">
-                <label htmlFor="sc-liq">Min traded / day (PKR m)</label>
-                <input id="sc-liq" className="rs-input" type="number" value={f.min_liquidity} onChange={set('min_liquidity')} style={{ width: 110 }} />
-              </div>
             </>
           )}
-          <label className="rs-row" style={{ fontSize: 13, color: 'var(--text-secondary)', paddingBottom: 8, cursor: 'pointer' }}>
-            <input type="checkbox" checked={f.shariah} onChange={set('shariah')} /> Shariah-compliant only
-          </label>
+          {f.market === 'PSX' && (
+            <label className="rs-row" style={{ fontSize: 13, color: 'var(--text-secondary)', paddingBottom: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={f.shariah} onChange={set('shariah')} /> Shariah-compliant only
+            </label>
+          )}
           <button type="button" className="rs-btn" style={{ marginBottom: 2 }} onClick={() => setF(DEFAULTS)}>Reset</button>
         </div>
       </Panel>
 
-      <Panel title={data ? `${data.total ?? 0} matches` : 'Results'} subtitle={f.market !== 'PSX' ? 'International rows carry valuation and 52-week data; sector and trend are PSX-only.' : null}>
+      <Panel title={data ? `${data.total ?? 0} matches` : 'Results'} subtitle={f.market !== 'PSX' ? 'International rows carry valuation, 52-week and moving-average data; trend and RSI are PSX-only. Shariah status: ask Claude.' : null}>
         {loading && !data ? (
           <Skeleton lines={8} />
         ) : !data?.builtAt ? (
@@ -153,7 +171,7 @@ export default function Screener() {
                 <tr>
                   {th('Symbol', 'symbol')}
                   {th('Price', 'price', 'num')}
-                  {th('Mkt cap', 'marketCap', 'num')}
+                  {th('Mkt cap $', 'marketCapUsd', 'num')}
                   {th('P/E', 'peTTM', 'num')}
                   {f.market === 'PSX' ? th('EPS gr.', 'epsGrowth', 'num') : th('Yield', 'dividendYield', 'num')}
                   {f.market === 'PSX' && th('Net margin', 'netMargin', 'num')}
@@ -168,10 +186,10 @@ export default function Screener() {
                 {rows.map((r) => (
                   <tr key={r.symbol} className="clickable" onClick={() => navigate(`/research/${encodeURIComponent(r.symbol)}`)}>
                     <td>
-                      <SymbolLink symbol={r.symbol} name={r.name} />
+                      <SymbolLink symbol={r.symbol} name={f.market === 'PSX' ? r.name : [r.name, r.country].filter(Boolean).join(' · ')} />
                     </td>
                     <td className="num">{fmtMoney(r.price, r.currency)}</td>
-                    <td className="num">{fmtBig(r.marketCap)}</td>
+                    <td className="num">{fmtBig(r.marketCapUsd)}</td>
                     <td className="num">{fmtNum(r.peTTM, 1)}</td>
                     {f.market === 'PSX' ? (
                       <td className={`num ${toneOf(r.epsGrowth)}`}>{fmtPct(r.epsGrowth, { signed: true, digits: 0 })}</td>
