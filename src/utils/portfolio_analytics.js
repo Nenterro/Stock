@@ -768,8 +768,10 @@ export function planContribution(holdings = [], targets = {}, amount = 0, opts =
 /* -------------------------------------------------------------------------- */
 
 export const BENCHMARKS = [
-  { symbol: 'KSE100', name: 'KSE-100', currency: 'PKR' },
-  { symbol: 'KMI30', name: 'KMI-30 (Shariah)', currency: 'PKR' },
+  // Total-return estimates: the PSX indices exclude dividends (5-8% a year),
+  // which would flatter a total-return portfolio against them.
+  { symbol: 'KSE100TR', name: 'KSE-100 (total return, est.)', currency: 'PKR' },
+  { symbol: 'KMI30TR', name: 'KMI-30 Shariah (total return, est.)', currency: 'PKR' },
   { symbol: '^GSPC', name: 'S&P 500', currency: 'USD' }
 ];
 

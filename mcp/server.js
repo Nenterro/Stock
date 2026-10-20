@@ -21,6 +21,8 @@ import { api } from './lib/api.js';
 import * as store from './lib/store.js';
 import * as pf from './lib/portfolio.js';
 import { planContribution } from '../src/utils/portfolio_analytics.js';
+import { buildInputs, runModels } from '../src/utils/models/pipeline.js';
+import { DEFAULT_SLEEVES } from '../src/utils/models/construct.js';
 
 const server = new McpServer({ name: 'stock-tracker', version: '1.0.0' });
 
@@ -290,7 +292,7 @@ tool(
   {
     title: 'Stock screener',
     description:
-      'Filter the nightly screener snapshot: every PSX equity, every stock above $2B on the 17 markets IBKR offers retail clients (US incl. ADRs, Canada, UK, Europe, Japan, Hong Kong, Australia, Singapore; about 5,000 names), and the curated ETFs. scope: "psx" or "global". Filters: min_<field>/max_<field> for price, marketCap (listing currency), marketCapUsd, peTTM, forwardPE, priceToBook, peg, dividendYield, grossMargin, netMargin, revenueGrowth, epsGrowth, freeFloat, avgValueTraded20d, rsi14, fromHigh52, return1m, return3m, return1y, volatility1y, maxDrawdown1y; equality on region (pk, us, gb, de, jp, hk...), country, market, kind (stock|etf), sector (common 11), trend (uptrend|downtrend|sideways, PSX only), smaCross (bullish|bearish), currency; shariah and aboveSma200 (true/false); q (name/symbol substring); sort (field, prefix - for descending). Ratios are fractions; avgValueTraded20d is PKR for PSX rows and USD otherwise. Shariah flags exist for PSX rows only: screen international names yourself (business activity plus debt and cash vs market cap) before recommending them. PSX rows have no dividend yield.',
+      'Filter the nightly screener snapshot (with model outputs: score / scoreSector = composite factor percentile 0-1 vs market / sector, scoreCoverage, upside vs fair value, impliedReturn and impliedGrowth from the valuation model, plus the nested `scores` and `valuation` blocks): every PSX equity, every stock above $2B on the 17 markets IBKR offers retail clients (US incl. ADRs, Canada, UK, Europe, Japan, Hong Kong, Australia, Singapore; about 5,000 names), and the curated ETFs. scope: "psx" or "global". Filters: min_<field>/max_<field> for price, marketCap (listing currency), marketCapUsd, peTTM, forwardPE, priceToBook, peg, dividendYield, grossMargin, netMargin, revenueGrowth, epsGrowth, freeFloat, avgValueTraded20d, rsi14, fromHigh52, return1m, return3m, return1y, volatility1y, maxDrawdown1y; equality on region (pk, us, gb, de, jp, hk...), country, market, kind (stock|etf), sector (common 11), trend (uptrend|downtrend|sideways, PSX only), smaCross (bullish|bearish), currency; shariah and aboveSma200 (true/false); q (name/symbol substring); sort (field, prefix - for descending). Ratios are fractions; avgValueTraded20d is PKR for PSX rows and USD otherwise. Shariah flags exist for PSX rows only: screen international names yourself (business activity plus debt and cash vs market cap) before recommending them. PSX rows have no dividend yield.',
     inputSchema: {
       filters: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}).describe('e.g. {"market":"PSX","shariah":true,"max_peTTM":10,"min_epsGrowth":0.1}'),
       sort: z.string().optional().describe('e.g. "peTTM" or "-return1y"'),
@@ -342,6 +344,132 @@ tool(
     }
     return ok(planContribution(p.holdings, t, amount, { prices, wholeShares, minTrade }));
   }
+);
+
+/* -------------------------------------------------------------------------- */
+/* Models                                                                     */
+/* -------------------------------------------------------------------------- */
+
+tool(
+  'get_expected_returns',
+  {
+    title: 'Expected returns by market',
+    description:
+      'Capital market assumptions recomputed nightly: per market (PSX, PSX Shariah, US, Europe, Japan, Hong Kong, Canada, Australia) and per core fund, the low/base/high expected annual return in local currency and USD, with the earnings and dividend yields, inflation and currency assumptions behind them and measured USD volatility. Real return is approximated by the earnings yield; see `assumptions` for the method and sources.',
+    inputSchema: {}
+  },
+  async () => ok(await api.expectedReturns())
+);
+
+tool(
+  'build_model_portfolio',
+  {
+    title: 'Model portfolio, projection and stress tests',
+    description:
+      'Run the portfolio construction pipeline: monthly USD returns (5y, short histories completed with KSE-100 TR or S&P 500), Ledoit-Wolf shrunk covariance, Black-Litterman returns from a policy reference portfolio plus per-asset views (fund CMAs; stock implied returns shrunk toward their market), and constrained mean-variance within the policy sleeves (global funds 35-45%, global stocks 25-35%, Pakistan 10-40%). Returns the recommended weights with minimum-variance, max-Sharpe, risk-parity and reference alternatives (expected return, volatility, Sharpe, risk contributions), a Monte Carlo projection of the contribution plan (block bootstrap, 10y percentiles, chance of being below the money put in) and historical/hypothetical stress tests for the current and recommended portfolios. Candidates default to current holdings + planner targets + watchlist; core funds ISWD/ISDU/ISDE are added if no global fund is among them. Takes 10-60 seconds.',
+    inputSchema: {
+      extraSymbols: z.array(z.string()).default([]).describe('More candidates to consider, e.g. ideas from screen_stocks'),
+      useResearch: z.boolean().default(true).describe('Include planner targets and watchlist as candidates'),
+      monthly: z.number().default(2500).describe('Monthly contribution in USD for the projection'),
+      contributionGrowth: z.number().default(0.05).describe('Annual growth of the contribution'),
+      years: z.number().int().min(1).max(40).default(10),
+      maxStockWeight: z.number().min(0.01).max(1).default(0.1).describe('Cap per single stock'),
+      rf: z.number().default(0.04).describe('USD risk-free rate'),
+      sleeves: z
+        .record(z.string(), z.object({ target: z.number(), min: z.number(), max: z.number() }))
+        .optional()
+        .describe('Override sleeve bounds, keys globalCore / globalStocks / pakistan'),
+      comparePakistan: z.array(z.number()).optional().describe('Also project with these Pakistan sleeve targets, e.g. [0.1, 0.3, 0.4]')
+    }
+  },
+  async ({ extraSymbols, useResearch, monthly, contributionGrowth, years, maxStockWeight, rf, sleeves, comparePakistan }) => {
+    const pos = await pf.positions({ currency: 'USD' });
+    let extra = [...extraSymbols];
+    if (useResearch) {
+      const rows = await pf.research();
+      extra.push(...rows.filter((r) => r.kind === 'watch').map((r) => r.symbol));
+      extra.push(...Object.keys(rows.find((r) => r.kind === 'targets')?.data?.targets || {}));
+    }
+    const fxSeries = await api.fxSeries();
+    const inputs = await buildInputs({
+      holdings: pos.holdings,
+      extraSymbols: extra,
+      fetchers: {
+        histories: (syms, range = '10y') => api.historyBatch(syms, range),
+        expectedReturns: () => api.expectedReturns(),
+        screenerRow: (s) => api.screenerRow(s)
+      }
+    });
+    const base = { ...inputs, holdings: pos.holdings, fxSeries, rf, maxStockWeight, monthly, contributionGrowth, years };
+    const result = runModels({ ...base, sleeves: sleeves ? { ...DEFAULT_SLEEVES, ...sleeves } : undefined });
+
+    let pakistanComparison;
+    if (comparePakistan?.length) {
+      pakistanComparison = comparePakistan.map((pk) => {
+        const rest = 1 - pk;
+        const s = {
+          globalCore: { ...DEFAULT_SLEEVES.globalCore, target: rest * 0.57, min: rest * 0.5, max: rest * 0.64 },
+          globalStocks: { ...DEFAULT_SLEEVES.globalStocks, target: rest * 0.43, min: rest * 0.36, max: rest * 0.5 },
+          pakistan: { ...DEFAULT_SLEEVES.pakistan, target: pk, min: Math.max(0, pk - 0.02), max: Math.min(1, pk + 0.02) }
+        };
+        try {
+          const r = runModels({ ...base, sleeves: s });
+          const rec = r.portfolios.recommended;
+          const y = r.projections.recommended.byYear.at(-1);
+          const worst = r.stress.recommended.reduce((a, x) => (x.portfolioReturn != null && x.portfolioReturn < a.r ? { r: x.portfolioReturn, name: x.name } : a), { r: 0, name: null });
+          return { pakistan: pk, expectedReturn: rec.expectedReturn, volatility: rec.volatility, sharpe: rec.sharpe, projection: y, worstStress: worst };
+        } catch (err) {
+          return { pakistan: pk, error: err.message };
+        }
+      });
+    }
+
+    const trim = (pfo) => ({ ...pfo, weights: Object.fromEntries(Object.entries(pfo.weights).filter(([, w]) => w > 0.0005)) });
+    return ok({
+      ...result,
+      portfolios: Object.fromEntries(Object.entries(result.portfolios).map(([k, v]) => [k, trim(v)])),
+      stress: {
+        notional: result.stress.notional,
+        current: result.stress.current?.map(({ holdings, ...s }) => s),
+        recommended: result.stress.recommended.map(({ holdings, ...s }) => s)
+      },
+      pakistanComparison,
+      notes: [
+        'Expected returns are model estimates (earnings-yield based), not forecasts; use the ranges in get_expected_returns.',
+        'Weights are a starting point for judgement: check Shariah status and theses before acting on single stocks.'
+      ]
+    });
+  }
+);
+
+tool(
+  'get_data_quality',
+  {
+    title: 'Data quality report',
+    description: 'Nightly report on the data behind the models: field coverage for PSX and global rows, stale prices, PSX series with unexplained jumps in the last 60 days, and the age of the global universe, global fundamentals and model outputs.',
+    inputSchema: {}
+  },
+  async () => ok(await api.dataQuality())
+);
+
+tool(
+  'get_jobs',
+  {
+    title: 'Scheduled jobs',
+    description: 'Status of the backend jobs: daily at 00:00 Pakistan time (prices, screener, models, data quality) and monthly on the 1st (global universe and fundamentals, then the daily steps). Shows next run, current progress and the last run per step.',
+    inputSchema: {}
+  },
+  async () => ok(await api.jobs())
+);
+
+tool(
+  'run_job',
+  {
+    title: 'Run a job now',
+    description: 'Queue the daily or monthly job immediately (needs the backend write token). The monthly job takes an hour or more.',
+    inputSchema: { job: z.enum(['daily', 'monthly']) }
+  },
+  async ({ job }) => ok(await api.runJob(job))
 );
 
 /* -------------------------------------------------------------------------- */

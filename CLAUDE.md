@@ -89,6 +89,37 @@ The backend side of the research features (all in `~/Docker/stock-api/lib/`):
 sector vocabulary across PSX, Yahoo and justETF). Write routes need
 `Authorization: Bearer $STOCK_API_WRITE_TOKEN`.
 
+### Models, and when they run
+
+Backend jobs (`lib/jobs.js`, Pakistan time; status at `/api/jobs`):
+
+- **daily 00:00** - screener build (PSX + global rows, technicals on adjusted
+  closes), then the market-wide models in `lib/models/`: expected returns per
+  market and fund (`expectedReturns.js`, written to `data/expected_returns.json`),
+  per-stock valuation (`valuation.js`: two-stage earnings model solved for
+  implied return / implied growth / fair value, plus peer multiples) and factor
+  scores (`scores.js`: percentiles vs market and sector, composite with
+  coverage), then the data-quality report (`dataQuality.js`).
+- **monthly, 1st, 00:00** - global universe (`globalUniverse.js`, ~5,100 stocks
+  on IBKR markets) and global fundamentals (`fundamentalsGlobal.js`, one Yahoo
+  call per stock), then the daily steps.
+
+Portfolio models run on demand, in `src/utils/models/` (shared by the Planner
+page and the MCP tool `build_model_portfolio`): `risk.js` (monthly USD
+returns, short histories filled from KSE-100 TR / S&P 500, Ledoit-Wolf),
+`optimize.js` (Black-Litterman, constrained mean-variance via projected
+gradient with Dykstra projections, min-variance, max-Sharpe, risk parity),
+`simulate.js` (block-bootstrap projection of the contribution plan, stress
+tests), `construct.js` (policy sleeves, views, the end-to-end run),
+`pipeline.js` (data in, everything out). Tests: `npm test` here, and
+`node --test test/` in `~/Docker/stock-api`.
+
+PSX price history is adjusted on the way in (`lib/adjust.js`): weekend rows
+dropped, splits/bonuses/dividends back-adjusted into `adjClose` (event feed
+where it has the event, PSX's 10% circuit breaker to detect the rest). Raw
+`price` is kept for valuing holdings; every return, risk and model figure uses
+`adjClose`. KSE100TR / KMI30TR are total-return estimates of the price indices.
+
 Conventions every layer relies on: ratios and returns are fractions (0.12 =
 12%), money is in full currency units (PSX publishes thousands; scaled on the
 way in), missing data is `null` never `0`, and every fundamentals or holdings

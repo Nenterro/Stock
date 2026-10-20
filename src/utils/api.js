@@ -395,3 +395,19 @@ export async function fetchScreener(params = {}) {
   );
   return fetchFromBackend(`/api/screener?${qs.toString()}`, { timeout: 30000 });
 }
+
+// --- Models -------------------------------------------------------------------
+
+export async function fetchExpectedReturns() {
+  return fetchFromBackend('/api/models/expected-returns', { timeout: 20000 });
+}
+
+/** The screener row (scores, valuation, fundamentals) for one symbol, or null. */
+export async function fetchScreenerRow(symbol) {
+  const data = await fetchScreener({ q: symbol, limit: 50 });
+  return (data?.rows || []).find((r) => r.symbol.toUpperCase() === String(symbol).toUpperCase()) || null;
+}
+
+export async function fetchJobs() {
+  return fetchFromBackend('/api/jobs', { timeout: 10000 });
+}

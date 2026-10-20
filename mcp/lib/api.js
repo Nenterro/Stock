@@ -61,6 +61,15 @@ export const api = {
   technicalsBatch: async (symbols) =>
     symbols.length ? (await call(`/api/technicals/batch?${qs({ symbols: csv(symbols) })}`, { timeout: 180000 }))?.results || {} : {},
   screener: (params) => call(`/api/screener?${qs(params)}`),
+  /** The screener row for one symbol (scores, valuation, fundamentals), or null. */
+  screenerRow: async (symbol) => {
+    const r = await call(`/api/screener?${qs({ q: symbol, limit: 50 })}`);
+    return (r?.rows || []).find((x) => x.symbol.toUpperCase() === String(symbol).toUpperCase()) || null;
+  },
+  expectedReturns: () => call('/api/models/expected-returns'),
+  dataQuality: () => call('/api/data-quality'),
+  jobs: () => call('/api/jobs'),
+  runJob: (job) => call('/api/jobs/run', { method: 'POST', body: { job }, auth: true }),
   health: () => call('/api/health'),
   overrides: () => call('/api/overrides'),
   setOverride: (body) => call('/api/overrides', { method: 'POST', body, auth: true }),

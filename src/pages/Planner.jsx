@@ -7,6 +7,7 @@ import { computePositions, planContribution } from '../utils/portfolio_analytics
 import { displayTicker } from '../utils/format';
 import { Panel, Segmented, Empty, Notice, SymbolLink, fmtMoney, fmtPct } from '../components/research/ResearchUI';
 import SymbolPicker from '../components/research/SymbolPicker';
+import ModelPortfolio from '../components/research/ModelPortfolio';
 import './Research.css';
 
 export default function Planner() {
@@ -98,7 +99,7 @@ export default function Planner() {
       <div className="rs-grid-2">
         <Panel
           title="Target allocation"
-          subtitle={targetsRec ? `Set by ${targetsRec.data?.setBy === 'Claude' ? 'Claude' : 'you'}${targetsRec.data?.updatedAt ? ` · ${String(targetsRec.data.updatedAt).slice(0, 10)}` : ''}` : 'No targets yet'}
+          subtitle={targetsRec ? `Set by ${targetsRec.data?.setBy === 'Claude' ? 'Claude' : targetsRec.data?.setBy === 'model' ? 'the model' : 'you'}${targetsRec.data?.updatedAt ? ` · ${String(targetsRec.data.updatedAt).slice(0, 10)}` : ''}` : 'No targets yet'}
           action={
             editing ? (
               <div className="rs-row">
@@ -227,6 +228,23 @@ export default function Planner() {
           )}
         </Panel>
       </div>
+
+      <ModelPortfolio
+        onUseAsTargets={async (weights) => {
+          const t = Object.fromEntries(Object.entries(weights).filter(([, w]) => w >= 0.005));
+          const sum = Object.values(t).reduce((a, b) => a + b, 0) || 1;
+          await saveResearch(
+            'targets',
+            '*',
+            {
+              targets: Object.fromEntries(Object.entries(t).map(([k, v]) => [k, v / sum])),
+              setBy: 'model',
+              rationale: `Model portfolio (Black-Litterman within policy sleeves), ${new Date().toISOString().slice(0, 10)}.`
+            },
+            { replace: true }
+          );
+        }}
+      />
 
       <Panel title="Analysis settings" subtitle="Used by the X-ray for Sharpe ratio and alpha, and as this page's default amount. Claude can set these too.">
         <div className="rs-filters">

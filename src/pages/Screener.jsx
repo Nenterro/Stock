@@ -33,7 +33,7 @@ export default function Screener() {
   const { research, saveResearch } = useData();
   const navigate = useNavigate();
   const [f, setF] = useState(DEFAULTS);
-  const [sort, setSort] = useState('peTTM');
+  const [sort, setSort] = useState('-score');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const watched = new Set(research.filter((r) => r.kind === 'watch').map((r) => r.symbol));
@@ -157,7 +157,7 @@ export default function Screener() {
         </div>
       </Panel>
 
-      <Panel title={data ? `${data.total ?? 0} matches` : 'Results'} subtitle={f.market !== 'PSX' ? 'International rows carry valuation, 52-week and moving-average data; trend and RSI are PSX-only. Shariah status: ask Claude.' : null}>
+      <Panel title={data ? `${data.total ?? 0} matches` : 'Results'} subtitle={`Score: composite factor percentile vs ${f.market === 'PSX' ? 'PSX' : 'the global universe'} (0-100; * = under 60% of the inputs available). Upside: vs the blended fair value.${f.market !== 'PSX' ? ' Trend and RSI are PSX-only. Shariah status: ask Claude.' : ''}`}>
         {loading && !data ? (
           <Skeleton lines={8} />
         ) : !data?.builtAt ? (
@@ -170,6 +170,8 @@ export default function Screener() {
               <thead>
                 <tr>
                   {th('Symbol', 'symbol')}
+                  {th('Score', 'score', 'num')}
+                  {th('Upside', 'upside', 'num')}
                   {th('Price', 'price', 'num')}
                   {th('Mkt cap $', 'marketCapUsd', 'num')}
                   {th('P/E', 'peTTM', 'num')}
@@ -187,6 +189,13 @@ export default function Screener() {
                   <tr key={r.symbol} className="clickable" onClick={() => navigate(`/research/${encodeURIComponent(r.symbol)}`)}>
                     <td>
                       <SymbolLink symbol={r.symbol} name={f.market === 'PSX' ? r.name : [r.name, r.country].filter(Boolean).join(' · ')} />
+                    </td>
+                    <td className="num" title={r.scores ? `value ${fmtPct(r.scores.value, { digits: 0 })} · quality ${fmtPct(r.scores.quality, { digits: 0 })} · growth ${fmtPct(r.scores.growth, { digits: 0 })} · momentum ${fmtPct(r.scores.momentum, { digits: 0 })} · low risk ${fmtPct(r.scores.lowRisk, { digits: 0 })} · data coverage ${fmtPct(r.scoreCoverage, { digits: 0 })}` : 'Not scored yet'}>
+                      {r.score == null ? '—' : Math.round(r.score * 100)}
+                      {r.scoreCoverage != null && r.scoreCoverage < 0.6 && <span className="rs-muted">*</span>}
+                    </td>
+                    <td className={`num ${toneOf(r.upside)}`} title={r.fairValue ? `fair value ${fmtMoney(r.fairValue, r.currency)}; implied return ${fmtPct(r.impliedReturn)}` : ''}>
+                      {r.upside == null ? '—' : fmtPct(Math.max(-0.95, Math.min(r.upside, 9.99)), { signed: true, digits: 0 })}
                     </td>
                     <td className="num">{fmtMoney(r.price, r.currency)}</td>
                     <td className="num">{fmtBig(r.marketCapUsd)}</td>

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { ArrowLeft, Eye, EyeOff, FileText } from 'lucide-react';
 import { useData } from '../context/DataContext';
-import { fetchFundamentals, fetchTechnicals, fetchFundHoldings, fetchHistoricalPrices } from '../utils/api';
+import { fetchFundamentals, fetchTechnicals, fetchFundHoldings, fetchHistoricalPrices, fetchScreenerRow } from '../utils/api';
 import { computePositions, computeLookThrough, companyKey } from '../utils/portfolio_analytics';
 import { useMarketResearch } from '../hooks/useMarketResearch';
 import { displayTicker } from '../utils/format';
@@ -77,6 +77,7 @@ export default function StockResearch() {
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState('1Y');
   const [noteDraft, setNoteDraft] = useState(null);
+  const [modelRow, setModelRow] = useState(null);
 
   useEffect(() => {
     let live = true;
@@ -89,8 +90,10 @@ export default function StockResearch() {
       fetchFundamentals(symbol).catch(() => null),
       fetchTechnicals(symbol).catch(() => null),
       fetchFundHoldings(symbol).catch(() => null),
-      fetchHistoricalPrices(symbol, '5y').catch(() => null)
-    ]).then(([f, t, h, hist]) => {
+      fetchHistoricalPrices(symbol, '5y').catch(() => null),
+      fetchScreenerRow(symbol).catch(() => null)
+    ]).then(([f, t, h, hist, row]) => {
+      setModelRow(row);
       if (!live) return;
       setFund(f);
       setTech(t);
@@ -292,6 +295,8 @@ export default function StockResearch() {
         </div>
       )}
 
+      {modelRow && (modelRow.scores || modelRow.valuation) && <ModelPanel row={modelRow} ccy={ccy} />}
+
       {fund?.annual?.length > 0 && <ResultsPanel fund={fund} ccy={ccy} />}
 
       <div className="rs-grid-2">
@@ -356,6 +361,61 @@ export default function StockResearch() {
           )}
         </Panel>
       )}
+    </div>
+  );
+}
+
+const FACTORS = [
+  ['value', 'Value'],
+  ['quality', 'Quality'],
+  ['growth', 'Growth'],
+  ['momentum', 'Momentum'],
+  ['lowRisk', 'Low risk']
+];
+
+function ModelPanel({ row, ccy }) {
+  const s = row.scores || {};
+  const ss = row.scoresSector || {};
+  const v = row.valuation || {};
+  const peers = row.region === 'pk' ? 'PSX' : 'global';
+  return (
+    <div className="rs-grid-2">
+      <Panel
+        title="Factor scores"
+        subtitle={`Percentile vs ${peers} stocks${ss.composite != null ? ` and vs its sector (${row.sector})` : ''}; higher is better. Data coverage ${fmtPct(s.coverage, { digits: 0 })}.`}
+      >
+        <div className="rs-legend">
+          <span className="rs-legend-item"><span className="rs-swatch" style={{ background: 'var(--series-1)' }} /> vs {peers}</span>
+          {ss.composite != null && <span className="rs-legend-item"><span className="rs-swatch" style={{ background: 'var(--series-2)' }} /> vs sector</span>}
+        </div>
+        <div className="rs-bars">
+          {[...FACTORS, ['composite', 'Composite']].map(([k, label]) => (
+            <div key={k} className="rs-bar-row" title={`${label}: ${s[k] == null ? 'no data' : Math.round(s[k] * 100)}${ss[k] != null ? ` (sector ${Math.round(ss[k] * 100)})` : ''}`}>
+              <span className="rs-bar-label" style={k === 'composite' ? { color: 'var(--text-primary)', fontWeight: 600 } : undefined}>{label}</span>
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span className="rs-bar-track"><span className="rs-bar-fill" style={{ width: `${(s[k] ?? 0) * 100}%`, background: 'var(--series-1)' }} /></span>
+                {ss.composite != null && <span className="rs-bar-track" style={{ height: 6 }}><span className="rs-bar-fill" style={{ width: `${(ss[k] ?? 0) * 100}%`, background: 'var(--series-2)' }} /></span>}
+              </span>
+              <span className="rs-bar-value">{s[k] == null ? '—' : Math.round(s[k] * 100)}</span>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="Valuation" subtitle={v.basis ? `Two-stage model on ${v.basis}; growth from ${v.growthSource}. Required return ${fmtPct(v.requiredReturn)} (its market's expected return).` : 'Peer multiples only (no positive earnings).'}>
+        <div className="rs-kv">
+          <div><dt>Fair value</dt><dd>{fmtMoney(v.fairValue, ccy)}</dd></div>
+          <div><dt>Upside</dt><dd className={toneOf(v.upside)}>{fmtPct(v.upside, { signed: true })}</dd></div>
+          <div><dt>Model value</dt><dd>{fmtMoney(v.dcfValue, ccy)}</dd></div>
+          <div><dt>Peer-multiple value</dt><dd>{fmtMoney(v.multiplesValue, ccy)}</dd></div>
+          <div><dt>Implied return</dt><dd>{fmtPct(v.impliedReturn)}</dd></div>
+          <div><dt>Growth priced in</dt><dd>{fmtPct(v.impliedGrowth)}</dd></div>
+          <div><dt>Base-case growth</dt><dd>{fmtPct(v.baseGrowth)}</dd></div>
+          <div><dt>Peer P/E</dt><dd>{fmtNum(v.peerPE, 1)}</dd></div>
+        </div>
+        <p className="rs-panel-sub" style={{ marginTop: 10 }}>
+          Implied return: what a buyer at today's price earns a year if the base case happens. Growth priced in: the 5-year growth that justifies today's price at the required return. Model estimates, not forecasts.
+        </p>
+      </Panel>
     </div>
   );
 }
