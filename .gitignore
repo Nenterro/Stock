@@ -40,3 +40,7 @@ CLAUDE.local.md
 # MCP server credentials (PocketBase login, E2EE PIN, backend write token).
 mcp/.env
 mcp/.auth.json
+
+# Private investment plan, decisions and reviews. The repo is public:
+# this folder must never be committed.
+/Personal Investment/
