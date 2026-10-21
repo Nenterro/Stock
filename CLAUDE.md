@@ -152,6 +152,31 @@ scanned, so they are captured with Claude reading the pages
 Status: MCP `get_statements` (no symbol) or `/api/statements`; retry a held
 filing with `retry_statement`.
 
+### News and geopolitics
+
+`lib/news.js` in the backend collects 20 RSS feeds every hour and keeps 90
+days of articles, de-duplicated across sources. Pakistani sources include
+Business Recorder, Dawn, Tribune and The News. Global ones include Bloomberg
+and FT (headlines and RSS summaries only, since they're paywalled; article
+pages are never fetched), Nikkei, SCMP, CNBC, BBC, Arab News, Middle East
+Eye, OilPrice and the Fed.
+
+`mcp/scripts/news-digest.sh` runs nightly at 02:30 PKT from cron on the home
+server. It starts one headless `claude -p` session with
+`mcp/news-server.js`, following `mcp/news/DIGEST.md`. That session tags the
+articles that matter (importance 1-3, themes, markets, sectors, symbols),
+writes the daily brief and updates the risk register (severity 1-5,
+direction, history, evidence). Untagged articles in the batch count as
+importance 0.
+
+Access:
+- MCP tools: `get_news`, `get_geo_brief`, `get_risk_register`.
+- App: Insights, under "News & risks", and "In the news" on each research
+  page.
+
+News never changes the models automatically. It informs stress-scenario
+choice, explicit Black-Litterman views and reviews.
+
 Conventions every layer relies on: ratios and returns are fractions (0.12 =
 12%), money is in full currency units (PSX publishes thousands; scaled on the
 way in), missing data is `null` never `0`, and every fundamentals or holdings

@@ -408,6 +408,22 @@ export async function fetchScreenerRow(symbol) {
   return (data?.rows || []).find((r) => r.symbol.toUpperCase() === String(symbol).toUpperCase()) || null;
 }
 
+const query = (o = {}) => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== '')).toString();
+
+/** Tagged news (nightly Claude digest): filter by symbol, theme, market, days, minImportance. */
+export async function fetchNews(params = {}) {
+  return fetchFromBackend(`/api/news?${query(params)}`, { timeout: 15000 });
+}
+
+/** The nightly news brief (latest, or a YYYY-MM-DD date). */
+export async function fetchNewsBrief(date) {
+  return fetchFromBackend(`/api/news/brief?${query({ date })}`, { timeout: 15000 });
+}
+
+export async function fetchNewsRisks(params = {}) {
+  return fetchFromBackend(`/api/news/risks?${query(params)}`, { timeout: 15000 });
+}
+
 export async function fetchJobs() {
   return fetchFromBackend('/api/jobs', { timeout: 10000 });
 }

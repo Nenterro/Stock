@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Trash2, Sparkles } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { displayTicker } from '../utils/format';
 import { Panel, Empty, Tag, Markdown, Segmented } from '../components/research/ResearchUI';
+import { NewsBrief } from '../components/research/News';
 import './Research.css';
 
 const KIND_LABEL = {
@@ -74,6 +75,7 @@ export function InsightCard({ insight, defaultOpen = false, onDelete }) {
 export default function Insights() {
   const { insights, deleteInsight } = useData();
   const [kind, setKind] = useState('all');
+  const [tab, setTab] = useState('analyses');
   const kinds = ['all', ...new Set(insights.map((i) => i.kind))];
   const shown = kind === 'all' ? insights : insights.filter((i) => i.kind === kind);
 
@@ -82,25 +84,34 @@ export default function Insights() {
       <div className="rs-header">
         <div>
           <h1 className="rs-title">Insights</h1>
-          <p className="rs-subtitle">Analyses Claude has written about your portfolio and the stocks you follow</p>
+          <p className="rs-subtitle">Claude's analyses of your portfolio, and its nightly brief on the news and risks behind your markets</p>
         </div>
-        {kinds.length > 2 && (
-          <Segmented label="Filter by kind" options={kinds.map((k) => ({ value: k, label: k === 'all' ? 'All' : KIND_LABEL[k] || k }))} value={kind} onChange={setKind} />
-        )}
+        <Segmented label="Section" options={[{ value: 'analyses', label: 'Analyses' }, { value: 'news', label: 'News & risks' }]} value={tab} onChange={setTab} />
       </div>
 
-      {shown.length === 0 ? (
-        <Panel>
-          <Empty title="No insights yet">
-            <Sparkles size={22} style={{ color: 'var(--accent-color)', margin: '8px 0' }} />
-            <br />
-            Open Claude Code in this project and ask, for example, <em>“review my portfolio”</em> or <em>“do a deep-dive on LUCK”</em>.
-            <br />
-            Claude reads your data through the stock-tracker tools and saves its analysis here.
-          </Empty>
-        </Panel>
+      {tab === 'news' ? (
+        <NewsBrief />
       ) : (
-        shown.map((i, idx) => <InsightCard key={i.id} insight={i} defaultOpen={idx === 0} onDelete={deleteInsight} />)
+        <>
+          {kinds.length > 2 && (
+            <div className="rs-row" style={{ marginBottom: 12 }}>
+              <Segmented label="Filter by kind" options={kinds.map((k) => ({ value: k, label: k === 'all' ? 'All' : KIND_LABEL[k] || k }))} value={kind} onChange={setKind} />
+            </div>
+          )}
+          {shown.length === 0 ? (
+            <Panel>
+              <Empty title="No insights yet">
+                <Sparkles size={22} style={{ color: 'var(--accent-color)', margin: '8px 0' }} />
+                <br />
+                Open Claude Code in this project and ask, for example, <em>“review my portfolio”</em> or <em>“do a deep-dive on LUCK”</em>.
+                <br />
+                Claude reads your data through the stock-tracker tools and saves its analysis here.
+              </Empty>
+            </Panel>
+          ) : (
+            shown.map((i, idx) => <InsightCard key={i.id} insight={i} defaultOpen={idx === 0} onDelete={deleteInsight} />)
+          )}
+        </>
       )}
     </div>
   );

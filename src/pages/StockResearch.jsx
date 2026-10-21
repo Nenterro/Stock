@@ -25,6 +25,7 @@ import {
   toneOf
 } from '../components/research/ResearchUI';
 import { InsightCard } from './Insights';
+import { SymbolNews } from '../components/research/News';
 import './Research.css';
 
 const SIGNAL_TONE = {
@@ -346,6 +347,8 @@ export default function StockResearch() {
           </Panel>
         )}
       </div>
+
+      <SymbolNews symbol={symbol} />
 
       <Panel title="Claude's analyses" subtitle={related.length ? null : 'Ask Claude for a deep-dive on this symbol and it will appear here.'}>
         {related.length ? related.map((i) => <InsightCard key={i.id} insight={i} />) : <Empty>No analyses yet.</Empty>}
