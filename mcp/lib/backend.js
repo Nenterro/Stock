@@ -2,7 +2,14 @@
  * stock-api client for the headless servers (statements, news). They use
  * only the write token, no PocketBase login, so they can run unattended.
  */
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, basename } from 'node:path';
 import { config } from './config.js';
+
+// The backend's data dir inside the container, and where it is on the host.
+const CONTAINER_DATA = '/app/data';
+const HOST_DATA = process.env.STOCK_API_HOST_DATA || '';
 
 export async function call(path, body) {
   if (!config.stockApiToken) throw new Error('STOCK_API_WRITE_TOKEN is not set (mcp/.env or environment).');
@@ -42,3 +49,22 @@ export const toolOn = (server) => (name, def, fn) =>
       return fail(err.message);
     }
   });
+
+/**
+ * Make a rendered page readable on this machine: on the home server the
+ * backend's file is used directly; elsewhere it is downloaded to a temp folder.
+ */
+export async function localPage(containerPath, jobId) {
+  if (HOST_DATA) {
+    const p = containerPath.replace(CONTAINER_DATA, HOST_DATA);
+    if (existsSync(p)) return p;
+  }
+  const dir = join(tmpdir(), 'stock-statements', jobId);
+  mkdirSync(dir, { recursive: true });
+  const target = join(dir, basename(containerPath));
+  if (existsSync(target)) return target;
+  const { res } = await call(`/api/statements/page?file=${encodeURIComponent(containerPath)}`);
+  if (!res.ok) throw new Error(`could not fetch page ${containerPath}: HTTP ${res.status}`);
+  writeFileSync(target, Buffer.from(await res.arrayBuffer()));
+  return target;
+}

@@ -14,33 +14,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, basename, dirname } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { call, json, ok, toolOn } from './lib/backend.js';
+import { json, ok, toolOn, localPage } from './lib/backend.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-// The backend's data dir inside the container, and where it is on the host.
-const CONTAINER_DATA = '/app/data';
-const HOST_DATA = process.env.STOCK_API_HOST_DATA || '';
-
-/** Make a page readable on this machine. */
-async function localPage(containerPath, jobId) {
-  if (HOST_DATA) {
-    const p = containerPath.replace(CONTAINER_DATA, HOST_DATA);
-    if (existsSync(p)) return p;
-  }
-  const dir = join(tmpdir(), 'stock-statements', jobId);
-  mkdirSync(dir, { recursive: true });
-  const target = join(dir, basename(containerPath));
-  if (existsSync(target)) return target;
-  const { res } = await call(`/api/statements/page?file=${encodeURIComponent(containerPath)}`);
-  if (!res.ok) throw new Error(`could not fetch page ${containerPath}: HTTP ${res.status}`);
-  writeFileSync(target, Buffer.from(await res.arrayBuffer()));
-  return target;
-}
-
 const server = new McpServer({ name: 'stock-statements', version: '1.0.0' });
 const tool = toolOn(server);
 
