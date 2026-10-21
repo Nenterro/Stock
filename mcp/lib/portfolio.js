@@ -1,4 +1,5 @@
 import { api } from './api.js';
+import { config } from './config.js';
 import * as store from './store.js';
 import { buildXray, computePositions, BENCHMARKS } from '../../src/utils/portfolio_analytics.js';
 import { generatePortfolioTimeSeries, calculateAllTimeMWR } from '../../src/utils/portfolio_math.js';
@@ -84,6 +85,27 @@ export async function xray({ currency = 'USD', portfolio } = {}) {
   });
 }
 
+/**
+ * Tier-1 statement tracking: PSX holdings, watchlist and planner targets.
+ * The backend can't read the (encrypted) portfolio, so this server tells it,
+ * at most hourly, whenever it has the portfolio loaded anyway.
+ */
+let lastTrackPush = 0;
+async function pushStatementTracking(holdings) {
+  if (Date.now() - lastTrackPush < 3600 * 1000 || !config.stockApiToken) return;
+  lastTrackPush = Date.now();
+  try {
+    const rows = await research();
+    const psxHeld = holdings.filter((h) => h.nativeCurrency === 'PKR').map((h) => h.ticker);
+    const watch = rows.filter((r) => r.kind === 'watch').map((r) => r.symbol);
+    const targets = Object.keys(rows.find((r) => r.kind === 'targets')?.data?.targets || {});
+    // The backend ignores non-PSX symbols (no PSX filings to find).
+    await api.trackStatements([...new Set([...psxHeld, ...watch, ...targets])]);
+  } catch {
+    // Best effort: tracking catches up next time.
+  }
+}
+
 export async function positions({ currency = 'USD', portfolio } = {}) {
   const txs = await transactions({ portfolio });
   const tickers = heldTickers(txs);
@@ -93,7 +115,9 @@ export async function positions({ currency = 'USD', portfolio } = {}) {
     cached('rates', MARKET_TTL, () => api.rates())
   ]);
   const fxRate = rates?.rates?.PKR || 278;
-  return { ...computePositions(txs, livePrices, { displayCurrency: currency, fxRate, fxSeries }), livePrices };
+  const out = { ...computePositions(txs, livePrices, { displayCurrency: currency, fxRate, fxSeries }), livePrices };
+  if (!portfolio) pushStatementTracking(out.holdings);
+  return out;
 }
 
 /** Portfolio value and returns over time, downsampled for reading. */

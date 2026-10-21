@@ -128,6 +128,30 @@ where it has the event, PSX's 10% circuit breaker to detect the rest). Raw
 `price` is kept for valuing holdings; every return, risk and model figure uses
 `adjClose`. KSE100TR / KMI30TR are total-return estimates of the price indices.
 
+### PSX financial statements
+
+PSX publishes balance sheets and cash flows only as results PDFs, nearly all
+scanned, so they are captured with Claude reading the pages
+(`lib/statements.js` in the backend):
+
+- the daily job's `statements discovery` step queues results filings for tier 1
+  (holdings, watchlist, planner targets, pushed hourly by the main MCP server:
+  every filing PSX lists) and tier 2 (Shariah PSX stocks trading >= PKR 10m a
+  day: latest annual + latest interim). The backend renders pages with poppler.
+- `mcp/scripts/extract-statements.sh` (cron on the home server, 01:30 PKT)
+  runs one headless `claude -p` session per filing with only
+  `mcp/statements-server.js` and `Read`, following `mcp/statements/EXTRACT.md`.
+- every submission is validated: the balance sheet must balance within 1%, and
+  profit must match PSX's own annual or quarterly table (single or summed
+  quarters) within 1.5%. Failures are held as needs-review, never stored.
+- accepted figures (PKR thousands) feed ROE, ROA, debt/equity, current ratio,
+  receivables/revenue, cash and debt to market cap, and FCF yield into
+  fundamentals and the screener. ROE uses the latest annual filing; with only
+  an interim captured it is annualised and `roeBasis` says so.
+
+Status: MCP `get_statements` (no symbol) or `/api/statements`; retry a held
+filing with `retry_statement`.
+
 Conventions every layer relies on: ratios and returns are fractions (0.12 =
 12%), money is in full currency units (PSX publishes thousands; scaled on the
 way in), missing data is `null` never `0`, and every fundamentals or holdings

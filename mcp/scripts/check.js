@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const transport = new StdioClientTransport({ command: process.execPath, args: [join(here, '..', 'server.js')], env: process.env });
+// CHECK_SERVER=statements-server.js to exercise the extraction server instead.
+const transport = new StdioClientTransport({ command: process.execPath, args: [join(here, '..', process.env.CHECK_SERVER || 'server.js')], env: process.env });
 const client = new Client({ name: 'check', version: '1.0.0' });
 await client.connect(transport);
 

@@ -444,6 +444,30 @@ tool(
 );
 
 tool(
+  'get_statements',
+  {
+    title: 'Captured financial statements',
+    description:
+      'PSX financial statements captured from the companies\' results filings (balance sheet, income statement, cash flow where published), per period, in PKR thousands, with the source PDF, pages and validation checks. Without a symbol: the capture queue (tracked companies, pending, accepted, needs-review with reasons, failed).',
+    inputSchema: { symbol: z.string().optional() }
+  },
+  async ({ symbol }) => {
+    const r = symbol ? await api.statements(symbol) : await api.statementsStatus();
+    return r ? ok(r) : fail(`No statements captured for ${symbol}`);
+  }
+);
+
+tool(
+  'retry_statement',
+  {
+    title: 'Retry a filing',
+    description: 'Put a filing that failed validation or extraction back in the queue (id like OGDC_2026-06-30), e.g. after checking the reason in get_statements.',
+    inputSchema: { id: z.string() }
+  },
+  async ({ id }) => ok(await api.retryStatement(id))
+);
+
+tool(
   'get_data_quality',
   {
     title: 'Data quality report',
