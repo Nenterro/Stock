@@ -488,6 +488,55 @@ tool(
 );
 
 tool(
+  'get_news',
+  {
+    title: 'News',
+    description:
+      'Recent news from Pakistani and global sources (Business Recorder, Dawn, Tribune, The News, Bloomberg and FT headlines, Nikkei Asia, SCMP, CNBC, BBC, Arab News, Middle East Eye, OilPrice, the Fed), tagged nightly by Claude with importance (0-3), themes, markets, sectors and symbols. Filter by symbol, theme (e.g. pakistan-macro, pakistan-politics, geopolitics-regional, geopolitics-global, monetary-policy, commodities, trade, markets, corporate), market (PK, US, EU, UK, CN, JP, IN, GULF, EM, GLOBAL), sector or free text. Sorted by importance, then time. Articles collected since the last digest are untagged and only match text searches.',
+    inputSchema: {
+      symbol: z.string().optional(),
+      theme: z.string().optional(),
+      market: z.string().optional(),
+      sector: z.string().optional(),
+      q: z.string().optional().describe('words that must all appear in the title or summary'),
+      days: z.number().optional().describe('look-back, default 7'),
+      minImportance: z.number().int().min(0).max(3).optional(),
+      limit: z.number().int().optional()
+    }
+  },
+  async (a) => ok(await api.news(a))
+);
+
+tool(
+  'get_geo_brief',
+  {
+    title: 'Daily news brief',
+    description:
+      'The nightly geopolitical and market brief written from the day\'s news: headline, summary, sections by theme with the articles behind each point, and what it means for the tracked holdings. Without a date: the latest. Lists the other dates available.',
+    inputSchema: { date: z.string().optional().describe('YYYY-MM-DD (Pakistan date of the digest)') }
+  },
+  async ({ date }) => {
+    const b = await api.newsBrief(date);
+    return b ? ok(b) : fail('No brief yet: the nightly digest has not run.');
+  }
+);
+
+tool(
+  'get_risk_register',
+  {
+    title: 'Risk register',
+    description:
+      'Running register of geopolitical and macro risks maintained by the nightly news digest: each with severity (1-5), direction (rising/stable/easing), the markets, sectors and symbols exposed, what to watch, its history of changes and recent evidence articles. Use it to choose stress scenarios and as an input to reviews and theses; it never changes the models by itself.',
+    inputSchema: {
+      market: z.string().optional(),
+      symbol: z.string().optional(),
+      includeResolved: z.boolean().optional()
+    }
+  },
+  async (a) => ok(await api.newsRisks(a))
+);
+
+tool(
   'run_job',
   {
     title: 'Run a job now',

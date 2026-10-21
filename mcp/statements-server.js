@@ -18,38 +18,12 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { config } from './lib/config.js';
+import { call, json, ok, toolOn } from './lib/backend.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // The backend's data dir inside the container, and where it is on the host.
 const CONTAINER_DATA = '/app/data';
 const HOST_DATA = process.env.STOCK_API_HOST_DATA || '';
-
-async function call(path, body) {
-  if (!config.stockApiToken) throw new Error('STOCK_API_WRITE_TOKEN is not set (mcp/.env or environment).');
-  let last;
-  for (const base of config.stockApiUrls) {
-    try {
-      const res = await fetch(`${base}${path}`, {
-        method: body === undefined ? 'GET' : 'POST',
-        headers: { Authorization: `Bearer ${config.stockApiToken}`, 'Content-Type': 'application/json' },
-        body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(180000)
-      });
-      return { base, res };
-    } catch (err) {
-      last = err;
-    }
-  }
-  throw new Error(`stock-api unreachable: ${last?.message}`);
-}
-
-async function json(path, body) {
-  const { res } = await call(path, body);
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status} from ${path}`);
-  return data;
-}
 
 /** Make a page readable on this machine. */
 async function localPage(containerPath, jobId) {
@@ -67,18 +41,8 @@ async function localPage(containerPath, jobId) {
   return target;
 }
 
-const ok = (data) => ({ content: [{ type: 'text', text: JSON.stringify(data, null, 1) }] });
-const fail = (m) => ({ content: [{ type: 'text', text: `Error: ${m}` }], isError: true });
-const tool = (name, def, fn) =>
-  server.registerTool(name, def, async (a) => {
-    try {
-      return await fn(a || {});
-    } catch (err) {
-      return fail(err.message);
-    }
-  });
-
 const server = new McpServer({ name: 'stock-statements', version: '1.0.0' });
+const tool = toolOn(server);
 
 tool(
   'statements_instructions',
