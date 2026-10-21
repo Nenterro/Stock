@@ -152,6 +152,40 @@ scanned, so they are captured with Claude reading the pages
 Status: MCP `get_statements` (no symbol) or `/api/statements`; retry a held
 filing with `retry_statement`.
 
+### Backtest data (point-in-time)
+
+Built in October 2026 for an honest historical backtest. Lives in the backend,
+separate from the live data:
+
+- `lib/archive.js` indexes the report archive at financials.psx.com.pk: 684
+  companies, delisted ones included, with about 22k annual and interim
+  reports from 2013.
+  - `availableAt` is when a report's figures could first be known: the
+    real posting date from 2018 on, else the filing deadline (annual
+    +4 months, half-year +2, quarter +1).
+  - Archive "years" are sometimes off by one, so the extracted period end
+    is the truth.
+- `lib/backtest/psxPrices.js` builds monthly adjusted closes and traded
+  value for every archive company from Sarmaaya, which keeps delisted
+  histories. `liquidAt(month)` is the point-in-time liquidity universe
+  (top 150 by 3-month traded value), so there is no survivorship bias.
+  Union 2013–2026: 332 companies, 35 of them no longer trading; some of
+  those are renames (ICI→LCI, GSKCH→HALEON, SHEL→WAFI) that need merging.
+- `lib/archiveExtract.js` reads annual reports into `archive_statements`.
+  - Text reports: the backend finds the statements as a cluster of
+    headings (balance sheet, then P&L or "comprehensive income", then cash
+    flow, unconsolidated first) and passes their text.
+  - Scanned reports (about 25%): contact sheets, then chosen pages
+    rendered in full.
+  - Checks: both years' balance sheets must balance; the cross-year check
+    compares each report's comparative column with the neighbouring
+    report; EPS × shares vs profit only warns.
+  - Per-share figures are never unit-scaled.
+- Extraction runs through `mcp/archive-server.js` + `mcp/archive/EXTRACT.md`
+  + `mcp/scripts/extract-archive.sh` (cron 03:00–09:00 PKT, stops early on a
+  usage limit). Status: `/api/archive/status`. `/api/archive/prioritise`
+  moves reports to the front of the queue.
+
 ### News and geopolitics
 
 `lib/news.js` in the backend collects 20 RSS feeds every hour and keeps 90
