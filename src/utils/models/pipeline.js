@@ -50,9 +50,19 @@ export async function buildInputs(p) {
 
   const er = await p.fetchers.expectedReturns().catch(() => null);
   const assets = [];
+  const excluded = [];
   for (const s of symbols) {
     const h = histories[s];
-    if (!h?.history?.length) continue;
+    if (!h?.history?.length) {
+      excluded.push({ symbol: s, reason: 'no price history' });
+      continue;
+    }
+    // Stocks without enough data to be scored aren't modelled either - unless
+    // already held, since current holdings must stay in the picture.
+    if (rows[s]?.dataGrade === 'C' && !held.includes(s)) {
+      excluded.push({ symbol: s, reason: `data grade C (missing ${(rows[s].missing || []).join(', ') || 'key inputs'})` });
+      continue;
+    }
     const currency = currencyOf(s);
     const kind = rows[s]?.kind || kindOf(s);
     const view = assetView({ symbol: s, kind, currency, region: rows[s]?.region, impliedReturn: rows[s]?.impliedReturn, scoreCoverage: rows[s]?.scoreCoverage }, er);
@@ -75,7 +85,7 @@ export async function buildInputs(p) {
   // Stress windows reach back to 2007: the full (coarser) proxy series.
   const long = await p.fetchers.histories(Object.values(PROXIES), 'all').catch(() => ({}));
   const proxiesLong = Object.fromEntries(Object.values(PROXIES).map((s) => [s, long[s]?.history?.length ? long[s] : proxies[s]]).filter(([, v]) => v));
-  return { assets, proxies, proxiesLong, expectedReturns: er, rows };
+  return { assets, proxies, proxiesLong, expectedReturns: er, rows, excluded };
 }
 
 /** USD series of adjusted closes, for stress tests. */
@@ -155,8 +165,10 @@ export function runModels(p) {
   const notional = totalNow > 0 ? totalNow : 10000;
   const current = Object.fromEntries(symbols.map((s, i) => [s, currentW[i]]));
 
+  const notes = [...(built.notes || []), ...(p.excluded || []).map((x) => `${x.symbol} left out: ${x.reason}.`)];
   return {
     ...built,
+    notes,
     returnSeries: undefined,
     current: totalNow > 0 ? { weights: current, value: totalNow } : null,
     projections,

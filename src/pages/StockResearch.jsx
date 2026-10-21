@@ -383,7 +383,10 @@ function ModelPanel({ row, ccy }) {
       <Panel
         title="Factor scores"
         subtitle={`Percentile vs ${peers} stocks${ss.composite != null ? ` and vs its sector (${row.sector})` : ''}; higher is better. Data coverage ${fmtPct(s.coverage, { digits: 0 })}.`}
+        action={row.dataGrade ? <Tag tone={row.dataGrade === 'A' ? 'good' : row.dataGrade === 'B' ? 'warning' : 'critical'}>Data grade {row.dataGrade}</Tag> : null}
       >
+        {row.dataGrade === 'C' && <Notice>Too little data to rank this stock: no composite score. Treat the factor bars below as partial.</Notice>}
+        {row.missing?.length > 0 && <p className="rs-panel-sub" style={{ marginBottom: 10 }}>Missing: {row.missing.join(', ')}.</p>}
         <div className="rs-legend">
           <span className="rs-legend-item"><span className="rs-swatch" style={{ background: 'var(--series-1)' }} /> vs {peers}</span>
           {ss.composite != null && <span className="rs-legend-item"><span className="rs-swatch" style={{ background: 'var(--series-2)' }} /> vs sector</span>}

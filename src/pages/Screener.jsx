@@ -22,7 +22,7 @@ const SECTORS = [
 
 const TREND_TONE = { uptrend: 'good', downtrend: 'serious', sideways: 'info' };
 
-const DEFAULTS = { market: 'PSX', shariah: true, max_peTTM: '', min_epsGrowth: '', min_dividendYield: '', sector: '', trend: '', country: '', min_liquidity: '10', q: '' };
+const DEFAULTS = { includeC: false, market: 'PSX', shariah: true, max_peTTM: '', min_epsGrowth: '', min_dividendYield: '', sector: '', trend: '', country: '', min_liquidity: '10', q: '' };
 
 const COUNTRIES = ['United States', 'United Kingdom', 'Japan', 'Hong Kong', 'Canada', 'Germany', 'Switzerland', 'France', 'Sweden', 'Australia', 'Netherlands', 'Italy', 'Spain', 'Singapore', 'Norway', 'Denmark', 'Finland'];
 
@@ -43,6 +43,8 @@ export default function Screener() {
     const t = setTimeout(() => {
       setLoading(true);
       const params = { sort, limit: 300 };
+      // Grade C stocks lack the data to be ranked; hidden unless asked for.
+      if (!f.includeC) params.dataGrade = 'A,B';
       if (f.market === 'PSX') params.scope = 'psx';
       if (f.market === 'International') params.scope = 'global';
       // Only PSX stocks carry a Shariah flag; international screening is done
@@ -153,11 +155,14 @@ export default function Screener() {
               <input type="checkbox" checked={f.shariah} onChange={set('shariah')} /> Shariah-compliant only
             </label>
           )}
+          <label className="rs-row" style={{ fontSize: 13, color: 'var(--text-secondary)', paddingBottom: 8, cursor: 'pointer' }} title="Grade C: too little data for a meaningful score">
+            <input type="checkbox" checked={f.includeC} onChange={set('includeC')} /> Include incomplete data (grade C)
+          </label>
           <button type="button" className="rs-btn" style={{ marginBottom: 2 }} onClick={() => setF(DEFAULTS)}>Reset</button>
         </div>
       </Panel>
 
-      <Panel title={data ? `${data.total ?? 0} matches` : 'Results'} subtitle={`Score: composite factor percentile vs ${f.market === 'PSX' ? 'PSX' : 'the global universe'} (0-100; * = under 60% of the inputs available). Upside: vs the blended fair value.${f.market !== 'PSX' ? ' Trend and RSI are PSX-only. Shariah status: ask Claude.' : ''}`}>
+      <Panel title={data ? `${data.total ?? 0} matches` : 'Results'} subtitle={`Score: composite factor percentile vs ${f.market === 'PSX' ? 'PSX' : 'the global universe'} (0-100), with its data grade: A = complete, B = usable with gaps (hover for what's missing), C = too little data to rank. Upside: vs the blended fair value.${f.market !== 'PSX' ? ' Trend and RSI are PSX-only. Shariah status: ask Claude.' : ''}`}>
         {loading && !data ? (
           <Skeleton lines={8} />
         ) : !data?.builtAt ? (
@@ -192,7 +197,15 @@ export default function Screener() {
                     </td>
                     <td className="num" title={r.scores ? `value ${fmtPct(r.scores.value, { digits: 0 })} · quality ${fmtPct(r.scores.quality, { digits: 0 })} · growth ${fmtPct(r.scores.growth, { digits: 0 })} · momentum ${fmtPct(r.scores.momentum, { digits: 0 })} · low risk ${fmtPct(r.scores.lowRisk, { digits: 0 })} · data coverage ${fmtPct(r.scoreCoverage, { digits: 0 })}` : 'Not scored yet'}>
                       {r.score == null ? '—' : Math.round(r.score * 100)}
-                      {r.scoreCoverage != null && r.scoreCoverage < 0.6 && <span className="rs-muted">*</span>}
+                      {r.dataGrade && (
+                        <span
+                          className="rs-muted"
+                          style={{ marginLeft: 4, fontSize: 11 }}
+                          title={`Data grade ${r.dataGrade}${r.missing?.length ? ` · missing: ${r.missing.join(', ')}` : ''}`}
+                        >
+                          {r.dataGrade}
+                        </span>
+                      )}
                     </td>
                     <td className={`num ${toneOf(r.upside)}`} title={r.fairValue ? `fair value ${fmtMoney(r.fairValue, r.currency)}; implied return ${fmtPct(r.impliedReturn)}` : ''}>
                       {r.upside == null ? '—' : fmtPct(Math.max(-0.95, Math.min(r.upside, 9.99)), { signed: true, digits: 0 })}
