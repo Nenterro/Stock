@@ -4,13 +4,18 @@
 # extract-statements.sh: one headless Claude Code session per report, with
 # only the archive MCP server and Read.
 #
-#   ARCHIVE_MAX     reports per run (default 40)
+#   ARCHIVE_MAX     reports per run (default 400)
+#   ARCHIVE_HOURS   stop starting new reports after this many hours (default 6),
+#                   so the run stays inside the night and leaves the day's
+#                   Claude usage alone
 #   ARCHIVE_MODEL   Claude model alias (default sonnet)
 set -uo pipefail
 
 export PATH="$HOME/.local/node/bin:$HOME/.local/bin:$PATH"
 here="$(cd "$(dirname "$0")/.." && pwd)" # mcp/
-MAX="${ARCHIVE_MAX:-40}"
+MAX="${ARCHIVE_MAX:-400}"
+HOURS="${ARCHIVE_HOURS:-6}"
+stop_at=$(( $(date +%s) + HOURS * 3600 ))
 MODEL="${ARCHIVE_MODEL:-sonnet}"
 API="${STOCK_API_LOCAL:-http://localhost:3005}"
 export STOCK_API_URL="${STOCK_API_URL:-$API,https://huz-stock.duckdns.org:8888}"
@@ -40,6 +45,7 @@ echo "$(date -Is) start: max $MAX, model $MODEL, pending $(pending 2>/dev/null |
 for i in $(seq 1 "$MAX"); do
   n="$(pending 2>/dev/null || echo 1)"
   [ "$n" = "0" ] && { echo "$(date -Is) queue empty" >>"$log"; break; }
+  [ "$(date +%s)" -ge "$stop_at" ] && { echo "$(date -Is) time window over" >>"$log"; break; }
   start=$(date +%s)
   out="$(cd "$work" && timeout 900 claude -p "$PROMPT" \
     --model "$MODEL" \
