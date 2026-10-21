@@ -254,7 +254,6 @@ export function riskParity({ S, budgets = null, lower, upper, groups = [], iters
  * @returns {{ mu, prior }}  posterior and prior expected total returns
  */
 export function blackLitterman({ S, wRef, delta = 2.5, tau = 0.05, views = [], rf = 0 }) {
-  const n = S.length;
   const pi = matVec(S, wRef).map((x) => delta * x); // implied excess returns
   const prior = pi.map((x) => x + rf);
   if (!views.length) return { mu: prior, prior, implied: pi };

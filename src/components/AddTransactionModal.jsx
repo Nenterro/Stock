@@ -110,8 +110,6 @@ export default function AddTransactionModal({ isOpen, onClose, initialData = nul
     }
   }, [initialData, isOpen]);
 
-  if (!isOpen) return null;
-
   const isTradeType = type === 'BUY' || type === 'SELL';
   const needsAsset = type !== 'DEPOSIT' && type !== 'WITHDRAW';
   // A transaction saved before dividends/taxes were dropped can still be opened
@@ -221,6 +219,10 @@ export default function AddTransactionModal({ isOpen, onClose, initialData = nul
     const match = ownedAssets.find(a => (a.symbol || '').toUpperCase() === assetSym.toUpperCase());
     return match ? match.shares : 0;
   }, [asset, type, ownedAssets]);
+
+  // After every hook: returning earlier would change the hook order between
+  // renders when isOpen flips.
+  if (!isOpen) return null;
 
   const renderMobileInput = (field, label, iconComponent, val, setVal, placeholder) => {
     const Icon = iconComponent;

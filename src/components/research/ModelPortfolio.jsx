@@ -76,7 +76,7 @@ export default function ModelPortfolio({ onUseAsTargets }) {
   };
 
   const pf = result?.portfolios?.[view];
-  const symbols = result ? result.assets.map((a) => a.symbol) : [];
+
   const proj = result?.projections?.[view] || result?.projections?.recommended;
   const fan = (proj?.byYear || []).map((y) => ({
     year: `Y${y.year}`,
