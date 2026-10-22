@@ -78,4 +78,9 @@ for i in $(seq 1 "$MAX"); do
   [ "$result" = "RESULT EMPTY" ] && break
 done
 echo "$(date -Is) done: pending $(pending 2>/dev/null || echo '?')" >>"$log"
+# Archive finished: spend the rest of the window on the blind judgement tasks.
+if [ "$(pending 2>/dev/null || echo 1)" = "0" ] && [ "$(date +%s)" -lt "$stop_at" ]; then
+  echo "$(date -Is) archive empty; handing over to blind-run.sh" >>"$log"
+  BLIND_HOURS=$(( (stop_at - $(date +%s)) / 3600 )) "$here/scripts/blind-run.sh"
+fi
 find "$logdir" -name '*.log' -mtime +60 -delete
