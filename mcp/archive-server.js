@@ -118,6 +118,7 @@ tool(
       faceValue: num.describe('par value per share, usually 10'),
       islamicFinancing: num.describe('part of totalBorrowings that is Islamic (musharaka, sukuk, ijarah, diminishing musharaka), when the statements label it'),
       interestIncome: num.describe('interest / markup income from conventional deposits and investments, when shown'),
+      conventionalInvestments: num.describe('conventional interest-bearing assets: conventional bank deposits, TDRs, T-bills, PIBs, conventional funds'),
       pagesUsed: z.array(z.number().int()).default([]),
       notes: z.string().optional()
     }

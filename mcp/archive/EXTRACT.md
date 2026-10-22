@@ -111,6 +111,19 @@ right matters as much as the totals.
     gains.
   - Give 0 if there is none. Leave it out only if you can't tell.
 
+- `conventionalInvestments`: assets held in *conventional* interest-bearing
+  form: deposits and savings accounts with conventional banks, TDRs, T-bills,
+  PIBs, conventional mutual funds, loans given at interest.
+  - Islamic bank deposits, sukuk, Islamic funds and equity shares are not
+    included.
+  - Give 0 if there are none. Leave it out only if you can't tell.
+
+Since about 2018, reports carry a **Shariah compliance disclosure** note
+(Companies Act 2017, Fourth Schedule). It states Islamic vs conventional
+financing, Shariah-compliant vs conventional bank deposits, and profit from
+each. When it exists, use it first. It's often near the end of the notes, so
+search the candidate pages for "Shariah".
+
 For companies with no borrowings and no notable cash, these take one quick
 look. Don't spend long on them for banks and insurers: their business
 decides their status.
