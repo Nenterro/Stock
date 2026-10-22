@@ -59,53 +59,50 @@ contains the text of the candidate statement pages and of the financing and
 income note pages (noteTexts). Read the figures from them and answer with
 the JSON object only. You cannot request more pages: if the primary
 statements are not in the text (wrong pages, garbled layout, or only part
-of a statement), answer {"skip": true, "skipReason": "..."} and a session
-with page images will handle the report. Never guess a figure the text
-doesn't show; leave it out.`;
+of a statement), set skip to true with a skipReason, and a session with page
+images will handle the report. Give each printed figure as one entry in
+`figures` ({ key, value }, in the stated unit; brackets mean negative).
+Never guess a figure the text doesn't show: leave its entry out.`;
 
-// Structured output allows at most 24 optional fields, so every field is
-// required but nullable (null = not printed); nulls are stripped afterwards.
-const nullable = (t) => ({ anyOf: [t, { type: 'null' }] });
-const num = nullable({ type: 'number' });
+// Structured output limits optional (24) and nullable (16) fields, and the
+// extraction has ~48. So figures come as a list of { key, value } pairs, keys
+// from a fixed list, only the figures the report prints; then rebuilt into
+// the archive_submit shape.
+const FIGURE_KEYS = [
+  ...['totalAssets', 'totalEquity', 'totalLiabilities', 'currentAssets', 'currentLiabilities', 'nonCurrentLiabilities', 'nonControllingInterest', 'cashAndEquivalents', 'shortTermInvestments', 'tradeReceivables', 'inventories', 'totalBorrowings', 'shareCapital', 'deposits', 'advances', 'investments'].map((k) => `balanceSheet.${k}`),
+  ...['revenue', 'grossProfit', 'operatingProfit', 'financeCost', 'otherIncome', 'profitBeforeTax', 'profitAfterTax', 'profitAttributableToOwners', 'eps'].map((k) => `incomeStatement.${k}`),
+  ...['operatingCashFlow', 'capex', 'dividendsPaid'].map((k) => `cashFlow.${k}`),
+  ...['totalAssets', 'totalEquity', 'totalLiabilities', 'nonControllingInterest', 'profitAfterTax', 'revenue'].map((k) => `priorYear.${k}`),
+  'sharesOutstanding',
+  'faceValue',
+  'islamicFinancing',
+  'interestIncome',
+  'conventionalInvestments'
+];
 const obj = (props) => ({ type: 'object', additionalProperties: false, properties: props, required: Object.keys(props) });
-const SCHEMA = obj(
-  {
-    skip: { type: 'boolean' },
-    skipReason: nullable({ type: 'string' }),
-    unit: nullable({ type: 'string', enum: ['thousands', 'millions', 'rupees'] }),
-    periodEnd: nullable({ type: 'string', description: 'YYYY-MM-DD' }),
-    periodMonths: nullable({ type: 'integer' }),
-    statementType: nullable({ type: 'string', enum: ['industrial', 'bank', 'insurance'] }),
-    basis: nullable({ type: 'string', enum: ['unconsolidated', 'consolidated'] }),
-    balanceSheet: obj(
-      Object.fromEntries(['totalAssets', 'totalEquity', 'totalLiabilities', 'currentAssets', 'currentLiabilities', 'nonCurrentLiabilities', 'nonControllingInterest', 'cashAndEquivalents', 'shortTermInvestments', 'tradeReceivables', 'inventories', 'totalBorrowings', 'shareCapital', 'deposits', 'advances', 'investments'].map((k) => [k, num])),
-    ),
-    incomeStatement: obj(Object.fromEntries(['revenue', 'grossProfit', 'operatingProfit', 'financeCost', 'otherIncome', 'profitBeforeTax', 'profitAfterTax', 'profitAttributableToOwners', 'eps'].map((k) => [k, num]))),
-    cashFlow: obj({ operatingCashFlow: num, capex: num, dividendsPaid: num }),
-    priorYear: obj({ totalAssets: num, totalEquity: num, totalLiabilities: num, nonControllingInterest: num, profitAfterTax: num, revenue: num }),
-    sharesOutstanding: num,
-    faceValue: num,
-    islamicFinancing: num,
-    interestIncome: num,
-    conventionalInvestments: num,
-    pagesUsed: { type: 'array', items: { type: 'integer' } },
-    notes: nullable({ type: 'string' })
-  }
-);
+const SCHEMA = obj({
+  skip: { type: 'boolean' },
+  skipReason: { type: 'string', description: 'empty unless skip' },
+  unit: { type: 'string', enum: ['thousands', 'millions', 'rupees'] },
+  periodEnd: { type: 'string', description: 'YYYY-MM-DD; empty if skip' },
+  periodMonths: { type: 'integer' },
+  statementType: { type: 'string', enum: ['industrial', 'bank', 'insurance'] },
+  basis: { type: 'string', enum: ['unconsolidated', 'consolidated'] },
+  figures: { type: 'array', items: obj({ key: { type: 'string', enum: FIGURE_KEYS }, value: { type: 'number' } }) },
+  pagesUsed: { type: 'array', items: { type: 'integer' } },
+  notes: { type: 'string' }
+});
 
-/** Drop nulls (and objects left empty) so the answer reads like a session's submission. */
-function clean(v) {
-  if (Array.isArray(v)) return v;
-  if (v && typeof v === 'object') {
-    const out = {};
-    for (const [k, x] of Object.entries(v)) {
-      const c = clean(x);
-      if (c == null || (typeof c === 'object' && !Array.isArray(c) && !Object.keys(c).length)) continue;
-      out[k] = c;
-    }
-    return out;
+/** The structured answer -> the archive_submit shape. */
+function shape(a) {
+  const out = { skip: a.skip, skipReason: a.skipReason, unit: a.unit, periodEnd: a.periodEnd, periodMonths: a.periodMonths, statementType: a.statementType, basis: a.basis, pagesUsed: a.pagesUsed || [], notes: a.notes || undefined };
+  for (const { key, value } of a.figures || []) {
+    if (!Number.isFinite(value)) continue;
+    const [sec, f] = key.includes('.') ? key.split('.') : [null, key];
+    if (sec) (out[sec] ||= {})[f] = value;
+    else out[f] = value;
   }
-  return v;
+  return out;
 }
 
 function userContent(job) {
@@ -150,7 +147,7 @@ function answerOf(message) {
   if (message.stop_reason === 'max_tokens') return { error: 'max_tokens' };
   const text = message.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   try {
-    return { answer: clean(JSON.parse(text)) };
+    return { answer: shape(JSON.parse(text)) };
   } catch {
     return { error: 'unparseable output' };
   }
