@@ -17,6 +17,8 @@ export PATH="$HOME/.local/node/bin:$HOME/.local/bin:$PATH"
 here="$(cd "$(dirname "$0")/.." && pwd)" # mcp/
 MAX="${STATEMENTS_MAX:-20}"
 MODEL="${STATEMENTS_MODEL:-sonnet}"
+# Wait out a usage-limit reset for up to this many hours.
+stop_at=$(( $(date +%s) + ${STATEMENTS_HOURS:-4} * 3600 ))
 API="${STOCK_API_LOCAL:-http://localhost:3005}"
 export STOCK_API_URL="${STOCK_API_URL:-$API,https://huz-stock.duckdns.org:8888}"
 export STOCK_API_HOST_DATA="${STOCK_API_HOST_DATA:-$HOME/Docker/stock-api/data}"
@@ -37,6 +39,20 @@ pending() {
   curl -fsS -m 20 "$API/api/statements" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).queue.pending))'
 }
 
+# A usage limit says when it resets ("resets 2:30am (UTC)"). Sleep until then
+# if that is before the given deadline (epoch seconds); fail otherwise.
+wait_for_reset() {
+  local t target
+  t="$(grep -oE 'resets [0-9]{1,2}(:[0-9]{2})?(am|pm) (UTC)' <<<"$1" | head -1 | awk '{print $2}')"
+  [ -z "$t" ] && return 1
+  target="$(date -u -d "today $t" +%s 2>/dev/null)" || return 1
+  [ "$target" -le "$(date +%s)" ] && target=$((target + 86400))
+  target=$((target + 120))
+  [ "$target" -ge "$2" ] && return 1
+  echo "$(date -Is) usage limit; waiting until $(date -u -d "@$target" +%H:%M) UTC" >>"$log"
+  sleep $((target - $(date +%s)))
+}
+
 PROMPT='You are the extractor for PSX financial statements. First call statements_instructions and follow them exactly. Then process exactly ONE filing: call statements_next, read the page images it lists with the Read tool, and call statements_submit (or statements_skip). If submit reports problems, re-read the pages concerned and resubmit, at most twice. Do not process a second filing. End with one line: "RESULT <id> <status>", or "RESULT EMPTY" if statements_next returned empty.'
 TOOLS="mcp__statements__statements_instructions,mcp__statements__statements_next,mcp__statements__statements_submit,mcp__statements__statements_skip,mcp__statements__statements_status,Read"
 
@@ -55,8 +71,8 @@ for i in $(seq 1 "$MAX"); do
   echo "$(date -Is) #$i exit $code ${result:-no result line}" >>"$log"
   if [ -z "$result" ]; then
     printf '%s\n' "$out" | tail -20 >>"$log"
-    # Usage limit or auth problem: stop for tonight, the queue keeps.
-    grep -qiE 'limit|login|auth|credit' <<<"$out" && break
+    # Usage limit: wait for the reset if it comes in time, else stop for tonight.
+    grep -qiE 'limit|login|auth|credit' <<<"$out" && { wait_for_reset "$out" "$stop_at" && continue; break; }
   fi
   [ "$result" = "RESULT EMPTY" ] && break
 done

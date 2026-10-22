@@ -38,6 +38,20 @@ pending() {
   curl -fsS -m 20 "$API/api/archive/status" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).queue.pending))'
 }
 
+# A usage limit says when it resets ("resets 2:30am (UTC)"). Sleep until then
+# if that is before the given deadline (epoch seconds); fail otherwise.
+wait_for_reset() {
+  local t target
+  t="$(grep -oE 'resets [0-9]{1,2}(:[0-9]{2})?(am|pm) (UTC)' <<<"$1" | head -1 | awk '{print $2}')"
+  [ -z "$t" ] && return 1
+  target="$(date -u -d "today $t" +%s 2>/dev/null)" || return 1
+  [ "$target" -le "$(date +%s)" ] && target=$((target + 86400))
+  target=$((target + 120))
+  [ "$target" -ge "$2" ] && return 1
+  echo "$(date -Is) usage limit; waiting until $(date -u -d "@$target" +%H:%M) UTC" >>"$log"
+  sleep $((target - $(date +%s)))
+}
+
 PROMPT='You extract statements from archived annual reports. First call archive_instructions and follow them exactly. Process exactly ONE report: archive_next, read what you need (archive_pages and the Read tool for images), then archive_submit (or archive_skip). Do not process a second report. End with one line: "RESULT <id> <status>", or "RESULT EMPTY".'
 TOOLS="mcp__archive__archive_instructions,mcp__archive__archive_next,mcp__archive__archive_pages,mcp__archive__archive_submit,mcp__archive__archive_skip,mcp__archive__archive_status,Read"
 
@@ -58,7 +72,8 @@ for i in $(seq 1 "$MAX"); do
   echo "$(date -Is) #$i exit $code $(($(date +%s) - start))s ${result:-no result line}" >>"$log"
   if [ -z "$result" ]; then
     printf '%s\n' "$out" | tail -20 >>"$log"
-    grep -qiE 'limit|login|auth|credit' <<<"$out" && break
+    # Usage limit: wait for the reset if it comes in time, else stop for tonight.
+    grep -qiE 'limit|login|auth|credit' <<<"$out" && { wait_for_reset "$out" "$stop_at" && continue; break; }
   fi
   [ "$result" = "RESULT EMPTY" ] && break
 done
