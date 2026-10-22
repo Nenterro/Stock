@@ -87,10 +87,33 @@ share capital note or the face of the balance sheet ("X ordinary shares of
 Rs 10 each"). Give the count itself, not thousands. `faceValue`: the par
 value.
 
-Shariah screening inputs, only when the statements show them clearly:
-- `islamicFinancing`: the part of borrowings labelled Islamic.
-- `interestIncome`: interest or markup income from conventional deposits and
-  investments.
+### Shariah screening inputs (industrial companies)
+
+The backtest rebuilds each year's Shariah status from these. Getting them
+right matters as much as the totals.
+
+- `islamicFinancing`: the part of `totalBorrowings` that is Islamic
+  (diminishing musharaka, sukuk, ijarah, murabaha, istisna, Islamic running
+  finance).
+  - The balance sheet rarely shows the split; the financing notes do.
+  - `archive_next` lists likely note pages in `notePages`. Read them with
+    `archive_text` (text reports) or `archive_pages` (scanned).
+  - Notes usually say "from Islamic banks / under Shariah-compliant
+    arrangements" or "conventional / at KIBOR + x%".
+  - Give 0 if all financing is conventional. Leave it out only if the notes
+    don't say.
+- `interestIncome`: income from *conventional* interest-bearing assets:
+  interest or markup on bank deposits, TDRs, T-bills, PIBs, savings
+  accounts, loans to others.
+  - Find it in the other income or finance income note, or as "interest
+    received" in the cash flow when the note isn't available.
+  - Exclude profit on Islamic deposits or sukuk, dividends and exchange
+    gains.
+  - Give 0 if there is none. Leave it out only if you can't tell.
+
+For companies with no borrowings and no notable cash, these take one quick
+look. Don't spend long on them for banks and insurers: their business
+decides their status.
 
 `pagesUsed`: the page numbers you read.
 

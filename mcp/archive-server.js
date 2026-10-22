@@ -56,6 +56,16 @@ tool(
   }
 );
 
+tool(
+  'archive_text',
+  {
+    title: 'Page text',
+    description: 'The text of up to 8 pages of the claimed report (text reports): use it for the financing and income notes listed in notePages, or any page whose number you know. Cheaper than images; for scanned reports use archive_pages.',
+    inputSchema: { id: z.string(), pages: z.array(z.number().int()).min(1).max(8) }
+  },
+  async ({ id, pages }) => ok(await json('/api/archive/text', { id, pages }))
+);
+
 const num = z.number().optional();
 tool(
   'archive_submit',

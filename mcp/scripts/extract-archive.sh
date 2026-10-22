@@ -53,7 +53,7 @@ wait_for_reset() {
 }
 
 PROMPT='You extract statements from archived annual reports. First call archive_instructions and follow them exactly. Process exactly ONE report: archive_next, read what you need (archive_pages and the Read tool for images), then archive_submit (or archive_skip). Do not process a second report. End with one line: "RESULT <id> <status>", or "RESULT EMPTY".'
-TOOLS="mcp__archive__archive_instructions,mcp__archive__archive_next,mcp__archive__archive_pages,mcp__archive__archive_submit,mcp__archive__archive_skip,mcp__archive__archive_status,Read"
+TOOLS="mcp__archive__archive_instructions,mcp__archive__archive_next,mcp__archive__archive_pages,mcp__archive__archive_text,mcp__archive__archive_submit,mcp__archive__archive_skip,mcp__archive__archive_status,Read"
 
 echo "$(date -Is) start: max $MAX, model $MODEL, pending $(pending 2>/dev/null || echo '?')" >>"$log"
 for i in $(seq 1 "$MAX"); do
