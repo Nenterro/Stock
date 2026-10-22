@@ -35,7 +35,7 @@ tool(
     inputSchema: {}
   },
   async () => {
-    const job = await json('/api/archive/next', {});
+    const job = await json('/api/archive/next', { claimant: 'session', preferSession: true });
     if (job.empty) return ok({ empty: true });
     for (const s of job.contactSheets || []) s.file = await localPage(s.file, job.id);
     return ok(job);
