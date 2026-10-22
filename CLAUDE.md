@@ -164,6 +164,16 @@ scanned, so they are captured with Claude reading the pages
 Status: MCP `get_statements` (no symbol) or `/api/statements`; retry a held
 filing with `retry_statement`.
 
+The live metrics (`statements.allPeriods` → `metricsFor`) use both stores:
+- the live filings;
+- the annual reports read for the backtest archive. A live record wins for
+  the same period end.
+
+Statements more than 21 months old are ignored
+(`MAX_STATEMENT_AGE_MONTHS`): an old balance sheet is worse than none,
+because it looks complete. Since October 2026 this covers most liquid PSX
+stocks: grade-A Shariah names went from 0 to 33 when it was connected.
+
 ### Backtest data (point-in-time)
 
 Built in October 2026 for an honest historical backtest. Lives in the backend,
