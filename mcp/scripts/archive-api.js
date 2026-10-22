@@ -61,7 +61,7 @@ the JSON object only. You cannot request more pages: if the primary
 statements are not in the text (wrong pages, garbled layout, or only part
 of a statement), set skip to true with a skipReason, and a session with page
 images will handle the report. Give each printed figure as one entry in
-`figures` ({ key, value }, in the stated unit; brackets mean negative).
+"figures" ({ key, value }, in the stated unit; brackets mean negative).
 Never guess a figure the text doesn't show: leave its entry out.`;
 
 // Structured output limits optional (24) and nullable (16) fields, and the
