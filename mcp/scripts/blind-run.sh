@@ -50,6 +50,7 @@ TOOLS="mcp__blind__blind_instructions,mcp__blind__blind_next,mcp__blind__blind_s
 echo "$(date -Is) start: max $MAX, model $MODEL" >>"$log"
 for i in $(seq 1 "$MAX"); do
   [ "$(date +%s)" -ge "$stop_at" ] && { echo "$(date -Is) time window over" >>"$log"; break; }
+  [ -f "$HOME/stock-backtest/PAUSE" ] && { echo "$(date -Is) paused (~/stock-backtest/PAUSE)" >>"$log"; break; }
   start=$(date +%s)
   out="$(cd "$work" && timeout 900 claude -p "$PROMPT" \
     --model "$MODEL" \

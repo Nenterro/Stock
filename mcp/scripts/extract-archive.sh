@@ -5,9 +5,10 @@
 # only the archive MCP server and Read.
 #
 #   ARCHIVE_MAX     reports per run (default 400)
-#   ARCHIVE_HOURS   stop starting new reports after this many hours (default 6),
-#                   so the run stays inside the night and leaves the day's
-#                   Claude usage alone
+#   ARCHIVE_HOURS   stop starting new reports after this many hours (default 6).
+#                   Cron runs it hourly with ARCHIVE_HOURS=23: it then uses
+#                   every usage window, waiting out each reset.
+#   Pause everything backtest-related: touch ~/stock-backtest/PAUSE (rm to resume).
 #   ARCHIVE_MODEL   Claude model alias (default sonnet)
 set -uo pipefail
 
@@ -60,6 +61,7 @@ for i in $(seq 1 "$MAX"); do
   n="$(pending 2>/dev/null || echo 1)"
   [ "$n" = "0" ] && { echo "$(date -Is) queue empty" >>"$log"; break; }
   [ "$(date +%s)" -ge "$stop_at" ] && { echo "$(date -Is) time window over" >>"$log"; break; }
+  [ -f "$HOME/stock-backtest/PAUSE" ] && { echo "$(date -Is) paused (~/stock-backtest/PAUSE)" >>"$log"; break; }
   start=$(date +%s)
   out="$(cd "$work" && timeout 900 claude -p "$PROMPT" \
     --model "$MODEL" \
