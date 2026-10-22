@@ -63,22 +63,24 @@ of a statement), answer {"skip": true, "skipReason": "..."} and a session
 with page images will handle the report. Never guess a figure the text
 doesn't show; leave it out.`;
 
-const num = { type: 'number' };
-const obj = (props, required = []) => ({ type: 'object', additionalProperties: false, properties: props, required });
+// Structured output allows at most 24 optional fields, so every field is
+// required but nullable (null = not printed); nulls are stripped afterwards.
+const nullable = (t) => ({ anyOf: [t, { type: 'null' }] });
+const num = nullable({ type: 'number' });
+const obj = (props) => ({ type: 'object', additionalProperties: false, properties: props, required: Object.keys(props) });
 const SCHEMA = obj(
   {
     skip: { type: 'boolean' },
-    skipReason: { type: 'string' },
-    unit: { type: 'string', enum: ['thousands', 'millions', 'rupees'] },
-    periodEnd: { type: 'string', description: 'YYYY-MM-DD' },
-    periodMonths: { type: 'integer' },
-    statementType: { type: 'string', enum: ['industrial', 'bank', 'insurance'] },
-    basis: { type: 'string', enum: ['unconsolidated', 'consolidated'] },
+    skipReason: nullable({ type: 'string' }),
+    unit: nullable({ type: 'string', enum: ['thousands', 'millions', 'rupees'] }),
+    periodEnd: nullable({ type: 'string', description: 'YYYY-MM-DD' }),
+    periodMonths: nullable({ type: 'integer' }),
+    statementType: nullable({ type: 'string', enum: ['industrial', 'bank', 'insurance'] }),
+    basis: nullable({ type: 'string', enum: ['unconsolidated', 'consolidated'] }),
     balanceSheet: obj(
       Object.fromEntries(['totalAssets', 'totalEquity', 'totalLiabilities', 'currentAssets', 'currentLiabilities', 'nonCurrentLiabilities', 'nonControllingInterest', 'cashAndEquivalents', 'shortTermInvestments', 'tradeReceivables', 'inventories', 'totalBorrowings', 'shareCapital', 'deposits', 'advances', 'investments'].map((k) => [k, num])),
-      ['totalAssets', 'totalEquity']
     ),
-    incomeStatement: obj(Object.fromEntries(['revenue', 'grossProfit', 'operatingProfit', 'financeCost', 'otherIncome', 'profitBeforeTax', 'profitAfterTax', 'profitAttributableToOwners', 'eps'].map((k) => [k, num])), ['profitAfterTax']),
+    incomeStatement: obj(Object.fromEntries(['revenue', 'grossProfit', 'operatingProfit', 'financeCost', 'otherIncome', 'profitBeforeTax', 'profitAfterTax', 'profitAttributableToOwners', 'eps'].map((k) => [k, num]))),
     cashFlow: obj({ operatingCashFlow: num, capex: num, dividendsPaid: num }),
     priorYear: obj({ totalAssets: num, totalEquity: num, totalLiabilities: num, nonControllingInterest: num, profitAfterTax: num, revenue: num }),
     sharesOutstanding: num,
@@ -87,10 +89,24 @@ const SCHEMA = obj(
     interestIncome: num,
     conventionalInvestments: num,
     pagesUsed: { type: 'array', items: { type: 'integer' } },
-    notes: { type: 'string' }
-  },
-  ['skip']
+    notes: nullable({ type: 'string' })
+  }
 );
+
+/** Drop nulls (and objects left empty) so the answer reads like a session's submission. */
+function clean(v) {
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const [k, x] of Object.entries(v)) {
+      const c = clean(x);
+      if (c == null || (typeof c === 'object' && !Array.isArray(c) && !Object.keys(c).length)) continue;
+      out[k] = c;
+    }
+    return out;
+  }
+  return v;
+}
 
 function userContent(job) {
   const { pages, noteTexts, found, candidates, previous, company, archiveYear, totalPages } = job;
@@ -134,7 +150,7 @@ function answerOf(message) {
   if (message.stop_reason === 'max_tokens') return { error: 'max_tokens' };
   const text = message.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   try {
-    return { answer: JSON.parse(text) };
+    return { answer: clean(JSON.parse(text)) };
   } catch {
     return { error: 'unparseable output' };
   }
