@@ -85,6 +85,7 @@ async function loadData() {
   D = {
     funds: Object.fromEntries(Object.entries(s.assets).map(([k, v]) => [k, byM(v.months, 'tr')])),
     usdpkr: byM(s.fx.USDPKR, 'rate'),
+    kse100: byM(s.psxIndices.KSE100 || [], 'close'),
     psx: Object.fromEntries(Object.entries(s.psx).map(([k, v]) => [k, { byM: byM(v), last: v[v.length - 1]?.m }])),
     notes: s.notes
   };
@@ -129,6 +130,15 @@ function psxHistory(sym, m) {
   for (const [mm, x] of D.psx[sym]?.byM || []) if (mm <= m) out.push({ date: `${mm}-28`, adjClose: x.adj });
   return out.sort((a, b) => (a.date < b.date ? -1 : 1));
 }
+// Proxies complete short histories, as in the production pipeline. KSE-100
+// is the price index: the live "TR" version applies today's dividend yield
+// to all history (look-ahead), so it isn't used here.
+function proxiesTo(m) {
+  const kse = [];
+  for (const [mm, v] of D.kse100) if (mm <= m) kse.push({ date: `${mm}-28`, adjClose: v });
+  return { KSE100: { history: kse.sort((a, b) => (a.date < b.date ? -1 : 1)), currency: 'PKR' }, SPY: { history: fundHistory('SPY', m), currency: 'USD' } };
+}
+
 function fxSeriesTo(m) {
   const out = {};
   for (const [mm, r] of D.usdpkr) if (mm <= m) out[`${mm}-28`] = r;
@@ -142,13 +152,13 @@ function optimizerWeights(at, m, { gold = false } = {}) {
   // The expected-returns payload shape the production view logic reads.
   const er = mk ? { markets: [{ key: 'psx', name: 'Pakistan (PSX)', expected: mk.expected, depreciationVsUsd: at.assumptions.pkrDepreciation?.rate ?? 0.08 }], funds: [] } : null;
   const assets = [
-    ...funds.map((k) => ({ symbol: k, sleeve: 'globalCore', currency: 'USD', history: fundHistory(k, m), expected: null, ...(k === 'GLD' ? { max: 0.15 } : {}) })),
+    ...funds.map((k) => ({ symbol: k, sleeve: 'globalCore', currency: 'USD', proxy: 'SPY', history: fundHistory(k, m), expected: null, ...(k === 'GLD' ? { max: 0.15 } : {}) })),
     ...cands.map((r) => {
       const v = assetView({ symbol: r.symbol, kind: 'stock', currency: 'PKR', region: 'pk', impliedReturn: r.impliedReturn, scoreCoverage: r.scores?.coverage }, er);
-      return { symbol: r.symbol, sleeve: 'pakistan', currency: 'PKR', history: psxHistory(r.symbol, m), expected: v?.expected ?? null, confidence: v?.confidence };
+      return { symbol: r.symbol, sleeve: 'pakistan', currency: 'PKR', proxy: 'KSE100', history: psxHistory(r.symbol, m), expected: v?.expected ?? null, confidence: v?.confidence };
     })
   ];
-  const res = constructPortfolio({ assets, sleeves: DEFAULT_SLEEVES, fxSeries: fxSeriesTo(m), today: `${addMonths(m, 1)}-01`, months: 60, maxStockWeight: 0.1 });
+  const res = constructPortfolio({ assets, proxies: proxiesTo(m), sleeves: DEFAULT_SLEEVES, fxSeries: fxSeriesTo(m), today: `${addMonths(m, 1)}-01`, months: 60, maxStockWeight: 0.1 });
   const w = res.portfolios.recommended.weights;
   const usd = {};
   const pkr = {};
