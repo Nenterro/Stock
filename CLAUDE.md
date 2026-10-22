@@ -198,6 +198,22 @@ separate from the live data:
   usage limit). Status: `/api/archive/status`. `/api/archive/prioritise`
   moves reports to the front of the queue.
 
+Backtest pieces built on the data above:
+- `lib/backtest/globalPrices.js`: monthly USD total returns rebuilt from
+  dividend events, plus FX, oil and PSX price indices.
+- `lib/backtest/shariah.js`: KMI-style screen.
+- `lib/backtest/asOf.js`: the time machine. Point-in-time rows run through
+  the production `scores`, `valuation` and `gradeRow` code.
+- `lib/backtest/diagnostics.js`: factor information coefficients and
+  quintile spreads.
+- `lib/backtest/blind.js`: anonymised tasks that test Claude's judgement
+  without hindsight, with leakage checks.
+- `mcp/scripts/backtest.js`: the walk-forward engine, using the production
+  `constructPortfolio`. 2023 onwards is held out unless `--holdout`.
+- `mcp/scripts/gdelt-daily.py` + `geo-indicators.js`: GDELT news indicators.
+
+Routes are under `/api/backtest/*` and need the write token.
+
 ### News and geopolitics
 
 `lib/news.js` in the backend collects 20 RSS feeds every hour and keeps 90
