@@ -122,6 +122,18 @@ against their home market's USD return; unknown ROE (all of PSX) defaults to
 1.25x the market's CMA required return; PSX growth uses profit after tax, not
 EPS, because published PSX EPS isn't restated for splits.
 
+PSX corporate actions come from `lib/psxEvents.js`:
+- Sarmaaya's payouts have dated rows only from about 2023; its older rows are
+  empty placeholders (date 0000-00-00).
+- Dividends and bonus issues before that come from Yahoo (`SYMBOL.KA`).
+  Yahoo restates old dividends per today's share, so each one is multiplied
+  back by the splits Yahoo records after it.
+- Delisted companies aren't on Yahoo. For the backtest their dividends come
+  from the dividends paid in their archived cash flow statements.
+- Until October 2026 the adjusted series had no dividends before 2023 at
+  all, which understated PSX total returns by the dividend yield (4–10% a
+  year).
+
 PSX price history is adjusted on the way in (`lib/adjust.js`): weekend rows
 dropped, splits/bonuses/dividends back-adjusted into `adjClose` (event feed
 where it has the event, PSX's 10% circuit breaker to detect the rest). Raw
