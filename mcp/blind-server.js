@@ -38,13 +38,13 @@ tool(
   {
     title: 'Submit the answer',
     description:
-      'Answer the task. news: { riskLevel 1-5, direction rising|stable|easing, pakistanWeight 0.10-0.40, reasoning, recognised }. stocks: { picks: [{ code, weight }] (1-15, weights sum to 1, each <= 0.15), reasoning, recognised }. leak-news: { country, year, month, confidence }. leak-stocks: { guesses: [{ code, company, confidence }], year, confidence }.',
+      'Answer the task. news: { riskLevel 1-5, direction rising|stable|easing, countryAWeight 0.10-0.40, reasoning, recognised }. stocks: { picks: [{ code, weight }] (1-15, weights sum to 1, each <= 0.15), reasoning, recognised }. leak-news: { country, year, month, confidence }. leak-stocks: { guesses: [{ code, company, confidence }], year, confidence }.',
     inputSchema: {
       id: z.string(),
       answer: z.object({
         riskLevel: z.number().int().min(1).max(5).optional(),
         direction: z.enum(['rising', 'stable', 'easing']).optional(),
-        pakistanWeight: z.number().optional(),
+        countryAWeight: z.number().optional().describe('share of the whole portfolio in Country A equities, 0.10-0.40'),
         picks: z.array(z.object({ code: z.string(), weight: z.number() })).optional(),
         reasoning: z.string().optional(),
         recognised: z.boolean().optional().describe('true if you believe you recognised the real country, period or companies'),

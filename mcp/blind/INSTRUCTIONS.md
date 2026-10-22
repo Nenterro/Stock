@@ -27,7 +27,7 @@ surroundings over 13 months.
 - Judge the risk to Country A's equities over the next 3 months.
   `riskLevel` runs 1 (calm) to 5 (severe), and `direction` is rising,
   stable or easing.
-- Set `pakistanWeight`: the share of the whole portfolio held in Country A
+- Set `countryAWeight`: the share of the whole portfolio held in Country A
   equities, between 0.10 and 0.40. The default is 0.30.
 - Move away from 0.30 only when the evidence is clear. Remember that money
   moved into Country A can't come back out of its currency.
