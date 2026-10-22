@@ -23,7 +23,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { json } from '../lib/backend.js';
+import { json as rawJson } from '../lib/backend.js';
 import { ENV_FILE } from '../lib/config.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +46,19 @@ if (!process.env.ANTHROPIC_API_KEY && existsSync(ENV_FILE)) {
   if (m) process.env.ANTHROPIC_API_KEY = m[1].trim();
 }
 const client = new Anthropic();
+
+// The backend restarts when it's redeployed: retry for up to ~10 minutes
+// rather than abandon claimed reports or a finished batch's results.
+async function json(path, body) {
+  for (let i = 0; ; i++) {
+    try {
+      return await rawJson(path, body);
+    } catch (err) {
+      if (!/unreachable/.test(err.message) || i >= 20) throw err;
+      await new Promise((r) => setTimeout(r, 30000));
+    }
+  }
+}
 
 /* ------------------------------------------------------------- prompt */
 
@@ -264,6 +277,9 @@ async function release(id, reason, apiFailed = true) {
 
 async function runBatches() {
   const size = Number(args.batch || 150);
+  // One API worker at a time: claims left by a previous (crashed) run are orphans.
+  const freed = await json('/api/archive/release-claims', { claimant: 'api' });
+  if (freed.released) console.error(`released ${freed.released} orphaned API claims`);
   for (;;) {
     const l = ledger();
     // A deliberately high per-report estimate: 40k input + 6k output tokens.
