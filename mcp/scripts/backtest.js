@@ -27,6 +27,11 @@
  *                   (src/utils/models/construct.js) on Islamic funds + the
  *                   top-N PSX candidates, views from as-of valuations
  *   optimizer-gold  optimizer with gold (GLD) allowed in the global core
+ *   blind-news      picks, with the Pakistan weight set by Claude's blind
+ *                   news judgement (lib/backtest/blind.js) for the next 3 months
+ *   blind-picks     policy split, PSX sleeve chosen by Claude blind
+ * Months a leakage check flagged as recognised use the model's default
+ * instead, so a recognised period can't flatter the blind results.
  *
  * Not testable, so not tested: global individual stock picking (the global
  * stocks sleeve falls to the funds, as the production code itself does when
@@ -91,6 +96,7 @@ async function loadData() {
   };
   const st = await json('/api/archive/status');
   D.archivePeriods = st.periods;
+  D.blind = await json('/api/backtest/blind/results').catch(() => ({ news: {}, stocks: {} }));
 }
 
 // Time-machine rows, cached per archive state (they change as reports arrive).
@@ -177,6 +183,22 @@ async function targets(strategy, m) {
     // No eligible PSX names yet: the Pakistan share waits in the global core.
     if (!Object.keys(pk).length) return { usd: { ISWD: 1 }, pkr: {}, note: 'no eligible PSX names' };
     return { usd: { ISWD: 0.7 }, pkr: scale(pk, 0.3) };
+  }
+  if (strategy === 'blind-news') {
+    // The latest blind news answer at or before m (decisions hold 3 months).
+    const months = Object.keys(D.blind.news || {}).filter((k) => k <= m && k > addMonths(m, -3)).sort();
+    const a = months.length ? D.blind.news[months[months.length - 1]] : null;
+    const w = a && !a.flagged ? a.pakistanWeight : 0.3;
+    const pk = pkPicks(at.rows, CFG.picks);
+    if (!Object.keys(pk).length) return { usd: { ISWD: 1 }, pkr: {}, note: 'no eligible PSX names' };
+    return { usd: { ISWD: 1 - w }, pkr: scale(pk, w), note: a ? (a.flagged ? 'blind answer flagged as recognised: default 30%' : null) : 'no blind answer: default 30%' };
+  }
+  if (strategy === 'blind-picks') {
+    const months = Object.keys(D.blind.stocks || {}).filter((k) => k <= m && k > addMonths(m, -CFG.rebalance)).sort();
+    const a = months.length ? D.blind.stocks[months[months.length - 1]] : null;
+    const pk = a && !a.flagged ? a.weights : pkPicks(at.rows, CFG.picks);
+    if (!Object.keys(pk).length) return { usd: { ISWD: 1 }, pkr: {}, note: 'no eligible PSX names' };
+    return { usd: { ISWD: 0.7 }, pkr: scale(pk, 0.3), note: a ? (a.flagged ? 'blind picks flagged as recognised: model picks' : null) : 'no blind answer: model picks' };
   }
   if (strategy === 'optimizer' || strategy === 'optimizer-gold') {
     try {
