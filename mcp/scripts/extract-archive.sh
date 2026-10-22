@@ -43,7 +43,7 @@ pending() {
 # if that is before the given deadline (epoch seconds); fail otherwise.
 wait_for_reset() {
   local t target
-  t="$(grep -oE 'resets [0-9]{1,2}(:[0-9]{2})?(am|pm) (UTC)' <<<"$1" | head -1 | awk '{print $2}')"
+  t="$(grep -oE 'resets [0-9]{1,2}(:[0-9]{2})?(am|pm) \(UTC\)' <<<"$1" | head -1 | awk '{print $2}')"
   [ -z "$t" ] && return 1
   target="$(date -u -d "today $t" +%s 2>/dev/null)" || return 1
   [ "$target" -le "$(date +%s)" ] && target=$((target + 86400))
