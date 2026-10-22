@@ -44,3 +44,4 @@ mcp/.auth.json
 # Private investment plan, decisions and reviews. The repo is public:
 # this folder must never be committed.
 /Personal Investment/
+mcp/.backtest-cache/
