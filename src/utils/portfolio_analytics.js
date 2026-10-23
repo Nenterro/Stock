@@ -291,12 +291,14 @@ export function computeLookThrough(holdings = [], fundHoldings = {}, fundamental
       if (x.ticker) c.tickers.add(x.ticker);
       c.viaFunds[h.ticker] = (c.viaFunds[h.ticker] || 0) + value * x.weight;
     }
-    if (coverage < 0.995) {
-      const c = addTo(companies, `undisclosed:${h.ticker}`, value * (1 - coverage), {
+    // A fund's own cash isn't an undisclosed company; only the rest of the gap is.
+    const gap = 1 - coverage - (Number(fund.assetMix?.cash) || 0);
+    if (gap >= 0.005) {
+      const c = addTo(companies, `undisclosed:${h.ticker}`, value * gap, {
         name: `${h.ticker}: undisclosed holdings`,
         tickers: new Set(),
         direct: 0,
-        viaFunds: { [h.ticker]: value * (1 - coverage) },
+        viaFunds: { [h.ticker]: value * gap },
         undisclosed: true
       });
       c.undisclosed = true;
