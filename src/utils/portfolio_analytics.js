@@ -766,6 +766,102 @@ export function planContribution(holdings = [], targets = {}, amount = 0, opts =
 }
 
 /* -------------------------------------------------------------------------- */
+/* Where the gains came from                                                  */
+/* -------------------------------------------------------------------------- */
+
+const INCOME_TYPES = new Set(['buy', 'sell', 'dividend', 'tax']);
+
+/**
+ * P&L earned in a window, from a daily series whose pnl is value minus net
+ * invested: the change in pnl from the last day before `since` to the end.
+ * Price moves, realised gains and dividends net of tax all count.
+ */
+function pnlSince(series, since) {
+  if (!series.length) return 0;
+  const end = series[series.length - 1].pnl;
+  if (!since) return end;
+  let start = 0;
+  for (const p of series) {
+    if (p.date >= since) break;
+    start = p.pnl;
+  }
+  return end - start;
+}
+
+/**
+ * Each holding's share of the gain over a window - current and closed
+ * positions alike, since a stock sold at a profit earned it too.
+ *
+ * @param {Object} opts { displayCurrency, fxRate, fxSeries, since ('YYYY-MM-DD', omit for all time) }
+ * @returns {{ rows: [{ ticker, name, contribution, held }], total }}
+ */
+export function contributionByHolding(transactions = [], livePrices = {}, historicalPrices = {}, opts = {}) {
+  const { displayCurrency = 'USD', fxRate = 278, fxSeries = null, since = null } = opts;
+  const byTicker = new Map();
+  for (const tx of transactions) {
+    const type = String(tx.type || '').toLowerCase();
+    const ticker = tickerOf(tx);
+    if (!INCOME_TYPES.has(type) || !ticker || ticker === 'CASH') continue;
+    if (!byTicker.has(ticker)) byTicker.set(ticker, []);
+    byTicker.get(ticker).push(tx);
+  }
+
+  const rows = [];
+  for (const [ticker, txs] of byTicker) {
+    const s = generatePortfolioTimeSeries(txs, livePrices, historicalPrices, displayCurrency, fxRate, fxSeries, { mwr: false });
+    if (!s.length) continue;
+    const contribution = pnlSince(s, since);
+    const held = s[s.length - 1].value > 0;
+    // Nothing held in the window and nothing earned in it: not part of this story.
+    if (!held && Math.abs(contribution) < 0.005) continue;
+    const name = txs.find((t) => t.assetName && t.assetName.toUpperCase() !== ticker)?.assetName
+      || (typeof livePrices[ticker] === 'object' && livePrices[ticker]?.name) || ticker;
+    rows.push({ ticker, name, contribution, held });
+  }
+  rows.sort((a, b) => b.contribution - a.contribution);
+  return { rows, total: rows.reduce((a, r) => a + r.contribution, 0) };
+}
+
+/**
+ * Pakistan holdings' gain in USD, split into what the share prices did and
+ * what the rupee did. The price effect is the rupee P&L at today's rate; the
+ * currency effect is the rest - what the rupee's move added or took away.
+ *
+ * @param {Object} opts { fxRate, fxSeries, since }
+ */
+export function currencySplit(transactions = [], livePrices = {}, historicalPrices = {}, opts = {}) {
+  const { fxRate = 278, fxSeries = null, since = null } = opts;
+  const pkr = transactions.filter(
+    (tx) => INCOME_TYPES.has(String(tx.type || '').toLowerCase()) && String(tx.currency || '').toUpperCase() === 'PKR'
+  );
+  if (!pkr.length) return null;
+
+  const inUsd = generatePortfolioTimeSeries(pkr, livePrices, historicalPrices, 'USD', fxRate, fxSeries, { mwr: false });
+  const inPkr = generatePortfolioTimeSeries(pkr, livePrices, historicalPrices, 'PKR', fxRate, fxSeries, { mwr: false });
+  if (!inUsd.length || !inPkr.length) return null;
+
+  const fxAt = buildFxLookup(fxSeries, fxRate);
+  const startDay = since && since > inUsd[0].date ? since : inUsd[0].date;
+  const fxStart = fxAt(dayStrToMs(startDay));
+  const fxEnd = fxAt(dayStrToMs(inUsd[inUsd.length - 1].date));
+
+  const usdGain = pnlSince(inUsd, since);
+  const pkrGain = pnlSince(inPkr, since);
+  const priceEffect = pkrGain / fxEnd;
+  return {
+    usdGain,
+    pkrGain,
+    priceEffect,
+    currencyEffect: usdGain - priceEffect,
+    fxStart,
+    fxEnd,
+    // What a rupee is worth in dollars now versus at the start (negative = it fell).
+    rupeeChange: fxStart > 0 && fxEnd > 0 ? fxStart / fxEnd - 1 : null,
+    from: startDay
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* The full X-ray                                                             */
 /* -------------------------------------------------------------------------- */
 

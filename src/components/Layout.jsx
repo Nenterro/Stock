@@ -16,7 +16,7 @@ const NAV_SECTIONS = [
     { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
     { path: '/graph', label: 'Graph', icon: LineChart },
     { path: '/transactions', label: 'Transactions', icon: Menu },
-    { path: '/analytics', label: 'X-ray', icon: BarChart2 },
+    { path: '/analytics', label: 'Analysis', icon: BarChart2 },
   ],
   [
     { path: '/screener', label: 'Screener', icon: Filter },
@@ -118,7 +118,7 @@ function BottomNav({ onOpenAdd, onOpenMore }) {
         </button>
       </div>
 
-      <NavLink to="/analytics" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title="X-ray" onClick={() => handleNavClick('X-ray')}>
+      <NavLink to="/analytics" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title="Analysis" onClick={() => handleNavClick('Analysis')}>
         <BarChart2 size={24} />
       </NavLink>
       

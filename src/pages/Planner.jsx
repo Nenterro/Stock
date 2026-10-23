@@ -246,7 +246,7 @@ export default function Planner() {
         }}
       />
 
-      <Panel title="Analysis settings" subtitle="Used by the X-ray for Sharpe ratio and alpha, and as this page's default amount. Claude can set these too.">
+      <Panel title="Analysis settings" subtitle="Used by Analysis for Sharpe ratio and alpha, and as this page's default amount. Claude can set these too.">
         <div className="rs-filters">
           <div className="rs-field">
             <label htmlFor="rf-pkr">Risk-free rate PKR %</label>

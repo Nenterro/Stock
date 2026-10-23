@@ -11,7 +11,7 @@ import { InsightCard } from './Insights';
 import './Research.css';
 
 const SHORTCUTS = [
-  { to: '/analytics', icon: BarChart2, label: 'X-ray', sub: 'What you really own' },
+  { to: '/analytics', icon: BarChart2, label: 'Analysis', sub: 'What you own and how it did' },
   { to: '/screener', icon: Filter, label: 'Screener', sub: 'Find candidates' },
   { to: '/planner', icon: Target, label: 'Planner', sub: "This month's buys" },
   { to: '/insights', icon: Sparkles, label: 'Insights', sub: "Claude's analyses" }
@@ -78,7 +78,7 @@ export default function Home() {
       </div>
 
       <div className="rs-grid-2">
-        <Panel title="Largest holdings" action={<Link to="/analytics" className="rs-btn">Full X-ray</Link>}>
+        <Panel title="Largest holdings" action={<Link to="/analytics" className="rs-btn">Full analysis</Link>}>
           {p.holdings.length ? (
             <BarList
               rows={p.holdings.map((h) => ({ key: h.ticker, label: `${displayTicker(h.ticker)} · ${h.name}`, weight: h.weight }))}

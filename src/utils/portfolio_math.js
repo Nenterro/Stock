@@ -435,6 +435,7 @@ export function calculateAllTimeMWR(
  * @param {string} displayCurrency   'USD' | 'PKR'
  * @param {number} currentFxRate     current USD->PKR, used as a fallback
  * @param {Object} fxSeries          { 'YYYY-MM-DD': usdToPkr } historical rates
+ * @param {Object} opts              { mwr = true } - false skips the money-weighted solve
  */
 export function generatePortfolioTimeSeries(
   transactions,
@@ -442,7 +443,8 @@ export function generatePortfolioTimeSeries(
   historicalPrices = {},
   displayCurrency = 'USD',
   currentFxRate = 278.0,
-  fxSeries = null
+  fxSeries = null,
+  { mwr = true } = {}
 ) {
   if (!transactions || transactions.length === 0) return [];
 
@@ -572,7 +574,9 @@ export function generatePortfolioTimeSeries(
     // --- 4. Money-weighted return -----------------------------------------
     let mwrPct = 0;
     let mwrAnnualPct = 0;
-    if (mwrFlows.length > 0 && marketValue > 0) {
+    // The XIRR solve dominates the cost; callers that only need values and
+    // P&L (one series per holding, say) can skip it.
+    if (mwr && mwrFlows.length > 0 && marketValue > 0) {
       const flows = mwrFlows.concat([{ date: dayStr, amount: -marketValue }]);
       const result = calculateXIRR(flows, mwrWarmStart);
       if (result.growth > 0) mwrWarmStart = result.growth;

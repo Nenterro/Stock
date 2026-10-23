@@ -26,3 +26,28 @@ test('net invested: value minus it is the total P&L, every day', () => {
   assert.ok(last.pnl > 0 && last.value > last.netInvested && last.mwrPct > 0);
   assert.ok(Number.isFinite(last.mwrAnnualPct));
 });
+
+test('contributions add up to the portfolio gain; the PKR split adds up to the USD gain', async () => {
+  const { contributionByHolding, currencySplit } = await import('../src/utils/portfolio_analytics.js');
+  const txs = [
+    { type: 'BUY', ticker: 'ABC', currency: 'USD', date: '2026-01-05', shares: 10, price: 10 },
+    { type: 'SELL', ticker: 'ABC', currency: 'USD', date: '2026-02-02', shares: 10, price: 13 },
+    { type: 'BUY', ticker: 'PSX1', currency: 'PKR', date: '2026-01-05', shares: 100, price: 280 },
+    { type: 'DIVIDEND', ticker: 'PSX1', currency: 'PKR', date: '2026-02-10', amount: 1000 }
+  ];
+  const history = {
+    ABC: { currency: 'USD', history: [{ date: '2026-01-05', price: 10 }, { date: '2026-02-02', price: 13 }] },
+    PSX1: { currency: 'PKR', history: [{ date: '2026-01-05', price: 280 }, { date: '2026-03-01', price: 300 }] }
+  };
+  const fx = { '2026-01-05': 280, '2026-02-10': 279, '2026-03-01': 275 };
+  const total = generatePortfolioTimeSeries(txs, {}, history, 'USD', 278, fx).at(-1).pnl;
+  const c = contributionByHolding(txs, {}, history, { displayCurrency: 'USD', fxRate: 278, fxSeries: fx });
+  assert.ok(Math.abs(c.total - total) < 1e-9);
+  assert.equal(c.rows.find((r) => r.ticker === 'ABC').held, false);
+  assert.ok(Math.abs(c.rows.find((r) => r.ticker === 'ABC').contribution - 30) < 1e-9);
+
+  const split = currencySplit(txs, {}, history, { fxRate: 278, fxSeries: fx });
+  assert.ok(Math.abs(split.priceEffect + split.currencyEffect - split.usdGain) < 1e-9);
+  // The rupee strengthened (280 -> 275 per dollar), so it added to the USD gain.
+  assert.ok(split.currencyEffect > 0 && split.rupeeChange > 0);
+});
