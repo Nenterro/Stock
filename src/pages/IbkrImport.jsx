@@ -42,6 +42,19 @@ export default function IbkrImport() {
   const [filterType, setFilterType] = useState('ALL');
   const [targetPortfolioId, setTargetPortfolioId] = useState('');
 
+  // Default the destination to wherever the USD holdings already live, so an
+  // IBKR import doesn't land in the default (PSX) portfolio by accident.
+  useEffect(() => {
+    if (targetPortfolioId || !portfolios?.length) return;
+    const counts = {};
+    for (const t of transactions || []) {
+      if (String(t.currency).toUpperCase() === 'USD' && t.portfolio) counts[t.portfolio] = (counts[t.portfolio] || 0) + 1;
+    }
+    const usual = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const match = portfolios.find(p => p.name === usual);
+    if (match) setTargetPortfolioId(match.id);
+  }, [portfolios, transactions, targetPortfolioId]);
+
   const logEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -245,7 +258,7 @@ export default function IbkrImport() {
     const toImport = [];
     
     // Look up the name of the selected portfolio
-    const targetPortfolio = availablePortfolios.find(p => p.id === targetPortfolioId);
+    const targetPortfolio = (portfolios || []).find(p => p.id === targetPortfolioId);
     const targetPortfolioName = targetPortfolio ? targetPortfolio.name : '';
 
     selectedIndices.forEach((idx) => {
