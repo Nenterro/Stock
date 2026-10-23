@@ -6,11 +6,12 @@ import { Home, TrendingUp, TrendingDown, RefreshCcw, DollarSign, Percent, Filter
 import { formatCurrency, getCurrencySymbol } from '../utils/format';
 import { generatePortfolioTimeSeries, rebaseSeries } from '../utils/portfolio_math';
 import BackendStatusDot from '../components/BackendStatusDot';
+import PortfolioHero from '../components/PortfolioHero';
 import FilterModal from '../components/FilterModal';
 import CompareModal from '../components/CompareModal';
 import UnifiedDropdown from '../components/UnifiedDropdown';
-import { 
-  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid 
+import {
+  ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid
 } from 'recharts';
 import './Graph.css';
 
@@ -109,7 +110,7 @@ export default function Graph() {
     return result;
   }, [transactions, filterState]);
 
-  const hasActiveFilters = (filterState?.excludedTickers && filterState.excludedTickers.size > 0) || 
+  const hasActiveFilters = (filterState?.excludedTickers && filterState.excludedTickers.size > 0) ||
     (filterState?.excludedPortfolios && filterState.excludedPortfolios.size > 0);
 
   // Generate full daily time-series data using filtered transactions
@@ -172,15 +173,15 @@ export default function Graph() {
   // Currency Toggle Pill
   const renderCurrencyTogglePill = () => (
     <div className="segmented-control">
-      <button 
-        type="button" 
+      <button
+        type="button"
         className={`segmented-btn ${displayCurrency === 'USD' ? 'active' : ''}`}
         onClick={() => setDisplayCurrency('USD')}
       >
         USD
       </button>
-      <button 
-        type="button" 
+      <button
+        type="button"
         className={`segmented-btn ${displayCurrency === 'PKR' ? 'active' : ''}`}
         onClick={() => setDisplayCurrency('PKR')}
       >
@@ -197,21 +198,26 @@ export default function Graph() {
         <div className="custom-chart-tooltip">
           <div className="tooltip-date">{data.dateFormatted}</div>
           <div className="tooltip-row">
-            <span className="tooltip-label">Portfolio Value:</span>
+            <span className="tooltip-label">Value</span>
             <span className="tooltip-val">{getCurrencySymbol(displayCurrency)}{formatCurrency(data.value)}</span>
           </div>
           <div className="tooltip-row">
-            <span className="tooltip-label">Cost Basis:</span>
+            <span className="tooltip-label">Invested</span>
             <span className="tooltip-val">{getCurrencySymbol(displayCurrency)}{formatCurrency(data.costBasis)}</span>
           </div>
           <div className="tooltip-row">
-            <span className="tooltip-label">Unrealized P&amp;L:</span>
+            <span className="tooltip-label">Unrealised gain</span>
             <span className="tooltip-val" style={{ color: data.unrealizedPnl >= 0 ? '#10b981' : '#ef4444' }}>
-              {data.unrealizedPnl >= 0 ? '+' : '-'}{getCurrencySymbol(displayCurrency)}{formatCurrency(Math.abs(data.unrealizedPnl || 0))}
+              {data.unrealizedPnl >= 0 ? '+' : '−'}{getCurrencySymbol(displayCurrency)}{formatCurrency(Math.abs(data.unrealizedPnl || 0))}
+              {data.costBasis > 0 && (
+                <span style={{ opacity: 0.8, marginLeft: 6 }}>
+                  ({data.unrealizedPnl >= 0 ? '+' : ''}{((data.unrealizedPnl / data.costBasis) * 100).toFixed(1)}%)
+                </span>
+              )}
             </span>
           </div>
           <div className="tooltip-row">
-            <span className="tooltip-label">Cum. MWR:</span>
+            <span className="tooltip-label">Return (MWR)</span>
             <span className="tooltip-val" style={{ color: data.mwrPct >= 0 ? '#10b981' : '#ef4444' }}>
               {data.mwrPct >= 0 ? '+' : ''}{data.mwrPct?.toFixed(2)}%
             </span>
@@ -224,9 +230,9 @@ export default function Graph() {
 
   // Filter Button Component
   const renderFilterBtn = () => (
-    <button 
+    <button
       className={`icon-btn relative ${hasActiveFilters ? 'active-filter' : ''}`}
-      title="Filter Graph" 
+      title="Filter Graph"
       onClick={() => setShowFilterModal(true)}
     >
       <Filter size={20} />
@@ -238,9 +244,9 @@ export default function Graph() {
   const renderCompareBtn = () => {
     if (chartMode !== 'gain') return null;
     return (
-      <button 
+      <button
         className={`icon-btn relative ${selectedBenchmarks.length > 0 ? 'active-filter' : ''}`}
-        title="Compare Benchmarks" 
+        title="Compare Benchmarks"
         onClick={() => setShowCompareModal(true)}
       >
         <GitCompare size={20} />
@@ -252,15 +258,15 @@ export default function Graph() {
   // Mode Toggle Pill (Value ($) vs Gain (%))
   const renderModeTogglePills = () => (
     <div className="segmented-control">
-      <button 
-        type="button" 
+      <button
+        type="button"
         className={`segmented-btn ${chartMode === 'value' ? 'active' : ''}`}
         onClick={() => setChartMode('value')}
       >
         Value ($)
       </button>
-      <button 
-        type="button" 
+      <button
+        type="button"
         className={`segmented-btn ${chartMode === 'gain' ? 'active' : ''}`}
         onClick={() => setChartMode('gain')}
       >
@@ -275,6 +281,30 @@ export default function Graph() {
   const totalPortfolioValue = endPoint ? endPoint.value : 0;
   const totalGainDollars = endPoint ? endPoint.pnl : 0;
   const allTimeMwr = endPoint ? endPoint.mwrPct : 0;
+  const sym = getCurrencySymbol(displayCurrency);
+  const signed = (v) => `${v >= 0 ? '+' : '−'}${sym}${formatCurrency(Math.abs(v || 0))}`;
+
+  // Change over the selected window: P&L earned in it and its MWR.
+  const periodChange = filteredTimeSeries.length > 1
+    ? {
+        gain: filteredTimeSeries[filteredTimeSeries.length - 1].pnl - (period === 'All Time' ? 0 : filteredTimeSeries[0].pnl),
+        mwr: filteredTimeSeries[filteredTimeSeries.length - 1].mwrPct
+      }
+    : null;
+
+  // Axis labels: $4k / Rs 1.1M rather than 4,000.00; dates by the window's length.
+  const compactMoney = (v) => {
+    const abs = Math.abs(v);
+    const body = abs >= 1e6 ? `${(abs / 1e6).toFixed(abs >= 1e7 ? 0 : 1)}M` : abs >= 1e3 ? `${(abs / 1e3).toFixed(abs >= 1e4 ? 0 : 1)}k` : abs.toFixed(0);
+    return `${v < 0 ? '−' : ''}${sym}${body.replace(/\.0(?=[kM])/, '')}`;
+  };
+  const spanDays = filteredTimeSeries.length;
+  const dateTick = (d) => {
+    const dt = new Date(`${d}T00:00:00Z`);
+    return spanDays > 200
+      ? dt.toLocaleDateString('en-GB', { month: 'short', year: '2-digit', timeZone: 'UTC' })
+      : dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  };
 
 
   const gradientOffset = () => {
@@ -282,13 +312,13 @@ export default function Graph() {
     const dataKey = 'mwrPct';
     const dataMax = Math.max(...filteredTimeSeries.map(i => i[dataKey] || 0));
     const dataMin = Math.min(...filteredTimeSeries.map(i => i[dataKey] || 0));
-    
+
     if (dataMax <= 0) return 0;
     if (dataMin >= 0) return 1;
     return dataMax / (dataMax - dataMin);
   };
-  
-  
+
+
   // Hard-stop colour bands along the x axis: green where the portfolio is worth
   // at least what was put in, red where it is not. Used for both the line and
   // its fill so the two can never disagree.
@@ -365,39 +395,33 @@ export default function Graph() {
         </div>
       </div>
 
-      {/* 1. Standalone Top Portfolio Value Pill / Card */}
-      <div className="glass-panel graph-value-card">
-        <div className="graph-value-info">
-          <span className="graph-hero-label">Portfolio Value</span>
-          <div className="graph-hero-value">
-            {getCurrencySymbol(displayCurrency)}{formatCurrency(totalPortfolioValue)}
-          </div>
-          
-          <div className="graph-hero-badge-row">
-            <div className={`graph-change-badge ${totalGainDollars >= 0 ? 'positive' : 'negative'}`}>
-              {totalGainDollars >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-              <span>
-                {totalGainDollars >= 0 ? '+' : ''}{getCurrencySymbol(displayCurrency)}{formatCurrency(totalGainDollars)} Total Gain
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* MWR pill: switches the chart to cumulative MWR % */}
-        <div className="graph-perf-pills">
-          <button 
-            type="button"
-            className={`perf-pill ${allTimeMwr >= 0 ? 'positive' : 'negative'} ${chartMode === 'gain' ? 'active-selector' : ''}`}
-            onClick={() => setChartMode('gain')}
-            title="Graph MWR Gain (%)"
-          >
-            <span className="perf-label">MWR</span>
-            <span className="perf-value">
-              {allTimeMwr >= 0 ? '+' : ''}{allTimeMwr.toFixed(2)}%
-            </span>
-          </button>
-        </div>
-      </div>
+      {/* 1. Value card, shared with Portfolio. The chip follows the selected period. */}
+      <PortfolioHero
+        value={`${sym}${formatCurrency(totalPortfolioValue)}`}
+        change={periodChange && {
+          amount: periodChange.gain,
+          text: signed(periodChange.gain),
+          pct: periodChange.mwr,
+          label: period === 'All Time' ? 'all time' : period === 'YTD' ? 'this year' : `past ${period}`
+        }}
+        stats={[
+          { label: 'Invested', value: `${sym}${formatCurrency(endPoint?.costBasis || 0)}`, sub: 'cost of current holdings' },
+          {
+            label: 'Total gain',
+            value: signed(totalGainDollars),
+            tone: totalGainDollars,
+            sub: endPoint ? `${signed(endPoint.unrealizedPnl)} unrealised · ${signed(endPoint.realizedPnl)} realised & income` : null
+          },
+          {
+            label: 'Return (MWR)',
+            value: `${allTimeMwr >= 0 ? '+' : ''}${allTimeMwr.toFixed(2)}%`,
+            tone: allTimeMwr,
+            sub: chartMode === 'gain' ? 'shown in the chart' : 'click to chart it',
+            onClick: () => setChartMode(chartMode === 'gain' ? 'value' : 'gain'),
+            active: chartMode === 'gain'
+          }
+        ]}
+      />
 
       {/* 2. Graph Chart Card */}
       <div className={`glass-panel graph-chart-card ${isExpanded ? 'fullscreen' : ''}`}>
@@ -413,8 +437,8 @@ export default function Graph() {
               <p className="rotate-prompt-desc">
                 Please turn your phone horizontally to landscape mode for the full-screen graph view.
               </p>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="rotate-close-btn"
                 onClick={toggleFullscreen}
               >
@@ -428,7 +452,7 @@ export default function Graph() {
           {/* Desktop Period Selector Pills */}
           <div className="period-pills desktop-only">
             {PERIODS.map(p => (
-              <button 
+              <button
                 key={p}
                 type="button"
                 className={`period-pill ${period === p ? 'active' : ''}`}
@@ -450,8 +474,8 @@ export default function Graph() {
 
           <div className="control-pills-row">
             {renderModeTogglePills()}
-            <button 
-              type="button" 
+            <button
+              type="button"
               className={`icon-btn mobile-only expand-chart-btn ${isExpanded ? 'active-filter' : ''}`}
               title={isExpanded ? "Collapse Chart" : "Expand Chart"}
               onClick={toggleFullscreen}
@@ -475,23 +499,11 @@ export default function Graph() {
                     {getGradientStops(filteredTimeSeries)}
                   </linearGradient>
 
-                  {/* The fill reuses the line's colour bands. A linearGradient
-                      has a single axis, so the vertical fade is applied as a
-                      mask instead of being baked into these stops - that keeps
-                      the fill matching the line segment for segment. The stops
-                      still carry a base opacity so the fill stays translucent
-                      even if the mask is not applied. */}
-                  <linearGradient id="valueSplitFill" x1="0" y1="0" x2="1" y2="0">
-                    {getGradientStops(filteredTimeSeries, 0.35)}
+                  <linearGradient id="valueNeutralFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ffffff" stopOpacity={0.07} />
+                    <stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
                   </linearGradient>
-                  <linearGradient id="valueFadeDown" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ffffff" stopOpacity={1} />
-                    <stop offset="95%" stopColor="#ffffff" stopOpacity={0} />
-                  </linearGradient>
-                  <mask id="valueFillMask" maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%">
-                    <rect x="0" y="0" width="100%" height="100%" fill="url(#valueFadeDown)" />
-                  </mask>
-                  
+
                   {chartMode === 'gain' && (
                     <>
                       <linearGradient id="splitColor" x1="0" y1="0" x2="0" y2="1">
@@ -508,41 +520,55 @@ export default function Graph() {
                   )}
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" vertical={false} />
-                <XAxis 
-                  dataKey="dateFormatted" 
-                  stroke="rgba(255, 255, 255, 0.3)" 
+                <XAxis
+                  dataKey="date"
+                  stroke="rgba(255, 255, 255, 0.3)"
                   tick={{ fontSize: 11 }}
                   tickLine={false}
                   axisLine={{ stroke: 'rgba(255, 255, 255, 0.1)' }}
+                  tickFormatter={dateTick}
+                  minTickGap={48}
                 />
-                <YAxis 
+                <YAxis
                   stroke="rgba(255, 255, 255, 0.3)"
                   tick={{ fontSize: 11 }}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(val) => 
-                    chartMode === 'value' 
-                      ? `${formatCurrency(val, displayCurrency, 0)}` 
-                      : `${val.toFixed(0)}%`
-                  }
+                  tickFormatter={(val) => (chartMode === 'value' ? compactMoney(val) : `${val.toFixed(0)}%`)}
+                  width={56}
                   domain={['auto', 'auto']}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 {chartMode === 'value' ? (
-                  /* Fill and line are drawn as two Areas on purpose. Recharts
-                     hands an Area's props to both its fill path and its stroke
-                     path, so masking a single Area would fade the line itself
-                     down the y axis. Splitting them lets the vertical fade
-                     apply to the fill alone while the line stays crisp - and
-                     both read their colour from the same cost-basis bands. */
+                  /* Value line over a quiet neutral fill. Only the gap between
+                     value and what was invested is coloured: green where it's
+                     above, red where it's below - the gain or loss itself. */
                   <>
                     <Area
                       type="monotone"
                       dataKey="value"
                       stroke="none"
-                      fillOpacity={1}
-                      fill="url(#valueSplitFill)"
-                      mask="url(#valueFillMask)"
+                      fill="url(#valueNeutralFill)"
+                      activeDot={false}
+                      isAnimationActive={false}
+                      legendType="none"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey={(d) => (d.value >= d.costBasis ? [d.costBasis, d.value] : null)}
+                      stroke="none"
+                      fill="#10b981"
+                      fillOpacity={0.18}
+                      activeDot={false}
+                      isAnimationActive={false}
+                      legendType="none"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey={(d) => (d.value < d.costBasis ? [d.value, d.costBasis] : null)}
+                      stroke="none"
+                      fill="#ef4444"
+                      fillOpacity={0.2}
                       activeDot={false}
                       isAnimationActive={false}
                       legendType="none"
@@ -551,7 +577,7 @@ export default function Graph() {
                       type="monotone"
                       dataKey="value"
                       stroke="url(#valueSplitColor)"
-                      strokeWidth={2.5}
+                      strokeWidth={2.25}
                       fill="none"
                       activeDot={renderActiveDot}
                       isAnimationActive={false}
@@ -569,13 +595,13 @@ export default function Graph() {
                   />
                 )}
                 {chartMode === 'value' && (
-                  <Line 
-                    type="stepAfter" 
-                    dataKey="costBasis" 
-                    stroke="rgba(255, 255, 255, 0.4)" 
-                    strokeWidth={2} 
-                    strokeDasharray="4 4" 
-                    dot={false} 
+                  <Line
+                    type="stepAfter"
+                    dataKey="costBasis"
+                    stroke="rgba(255, 255, 255, 0.35)"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 4"
+                    dot={false}
                     isAnimationActive={false}
                   />
                 )}
@@ -586,7 +612,7 @@ export default function Graph() {
       </div>
 
       {showFilterModal && (
-        <FilterModal 
+        <FilterModal
           transactions={transactions}
           initialState={filterState}
           showOnlyTickerAndPortfolio={true}

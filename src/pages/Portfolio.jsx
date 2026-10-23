@@ -6,6 +6,7 @@ import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import FilterModal from '../components/FilterModal';
 import BackendStatusDot from '../components/BackendStatusDot';
+import PortfolioHero from '../components/PortfolioHero';
 import { formatCurrency, getCurrencySymbol, displayTicker } from '../utils/format';
 import { generatePortfolioTimeSeries } from '../utils/portfolio_math';
 import './Portfolio.css';
@@ -13,40 +14,6 @@ import './Portfolio.css';
 /** Share counts to at most 2 decimals: 25.5497 -> 25.55, 276 -> 276. */
 function fmtShares(n) {
   return (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
-}
-
-function HeroStat({ label, value, sub, tone }) {
-  const cls = tone == null ? '' : tone >= 0 ? 'positive' : 'negative';
-  return (
-    <div className="pf-stat">
-      <span className="pf-stat-label">{label}</span>
-      <span className={`pf-stat-value ${cls}`}>{value}</span>
-      {sub && <span className="pf-stat-sub">{sub}</span>}
-    </div>
-  );
-}
-
-/** Last 30 days of portfolio value, drawn small; green or red by direction. */
-function Sparkline({ points = [] }) {
-  if (points.length < 2) return null;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const span = max - min || 1;
-  const xy = points.map((v, i) => [(i / (points.length - 1)) * 100, 28 - ((v - min) / span) * 26]);
-  const line = xy.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
-  const color = points[points.length - 1] >= points[0] ? '#10b981' : '#ef4444';
-  return (
-    <svg className="pf-spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label="Portfolio value, last 30 days">
-      <defs>
-        <linearGradient id="pfSparkFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={`0,30 ${line} 100,30`} fill="url(#pfSparkFill)" />
-      <polyline points={line} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
 }
 
 export default function Portfolio() {
@@ -459,36 +426,21 @@ export default function Portfolio() {
           </div>
         </div>
 
-        {/* Hero: what the portfolio is worth now (left), how it got here (right) */}
-        <div className="glass-panel pf-hero">
-          <div className="pf-hero-now">
-            <div className="pf-hero-label">Portfolio value</div>
-            <div className="pf-hero-value">{sym}{formatCurrency(totalMarketValue)}</div>
-            <div className={`pf-day-chip ${totalDayChange >= 0 ? 'positive' : 'negative'}`}>
-              {totalDayChange >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-              <span>{signed(totalDayChange)}</span>
-              {dayPct != null && <span className="pf-day-pct">{totalDayChange >= 0 ? '+' : ''}{dayPct.toFixed(2)}%</span>}
-              <span className="pf-day-when">today</span>
-            </div>
-            <Sparkline points={sparkline} />
-          </div>
-
-          <div className="pf-hero-stats">
-            <HeroStat label="Invested" value={`${sym}${formatCurrency(totalInvested)}`} sub="cost of current holdings" />
-            <HeroStat
-              label="Total gain"
-              value={signed(totalGain)}
-              tone={totalGain}
-              sub={`${signed(totalUnrealizedPnL)} unrealised · ${signed(totalRealizedPnL + totalIncome)} realised & income`}
-            />
-            <HeroStat
-              label="Return (MWR)"
-              value={`${mwrPercent >= 0 ? '+' : ''}${mwrPercent.toFixed(2)}%`}
-              tone={mwrPercent}
-              sub="on the money you put in"
-            />
-          </div>
-        </div>
+        <PortfolioHero
+          value={`${sym}${formatCurrency(totalMarketValue)}`}
+          change={{ amount: totalDayChange, text: signed(totalDayChange), pct: dayPct, label: 'today' }}
+          sparkline={sparkline}
+          stats={[
+            { label: 'Invested', value: `${sym}${formatCurrency(totalInvested)}`, sub: 'cost of current holdings' },
+            {
+              label: 'Total gain',
+              value: signed(totalGain),
+              tone: totalGain,
+              sub: `${signed(totalUnrealizedPnL)} unrealised · ${signed(totalRealizedPnL + totalIncome)} realised & income`
+            },
+            { label: 'Return (MWR)', value: `${mwrPercent >= 0 ? '+' : ''}${mwrPercent.toFixed(2)}%`, tone: mwrPercent, sub: 'on the money you put in' }
+          ]}
+        />
 
         {/* Animated Tab Toggle */}
         <div className="position-toggle-container">
