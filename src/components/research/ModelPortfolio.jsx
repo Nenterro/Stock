@@ -59,6 +59,8 @@ export default function ModelPortfolio({ onUseAsTargets }) {
         ...inputs,
         holdings: positions.holdings,
         fxSeries,
+        // The models work in USD; without a saved rate construct.js falls back to 4%.
+        rf: research.find((r) => r.kind === 'settings')?.data?.riskFreeRate?.USD,
         monthly: Number(monthly) || 0,
         years: Number(years) || 10,
         contributionGrowth: (Number(growth) || 0) / 100,

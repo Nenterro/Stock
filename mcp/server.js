@@ -374,7 +374,7 @@ tool(
       contributionGrowth: z.number().default(0.05).describe('Annual growth of the contribution'),
       years: z.number().int().min(1).max(40).default(10),
       maxStockWeight: z.number().min(0.01).max(1).default(0.1).describe('Cap per single stock'),
-      rf: z.number().default(0.04).describe('USD risk-free rate'),
+      rf: z.number().optional().describe('USD risk-free rate; defaults to the one saved in research settings, else 4%'),
       sleeves: z
         .record(z.string(), z.object({ target: z.number(), min: z.number(), max: z.number() }))
         .optional()
@@ -385,8 +385,9 @@ tool(
   async ({ extraSymbols, useResearch, monthly, contributionGrowth, years, maxStockWeight, rf, sleeves, comparePakistan }) => {
     const pos = await pf.positions({ currency: 'USD' });
     let extra = [...extraSymbols];
+    const rows = await pf.research();
+    rf ??= rows.find((r) => r.kind === 'settings')?.data?.riskFreeRate?.USD;
     if (useResearch) {
-      const rows = await pf.research();
       extra.push(...rows.filter((r) => r.kind === 'watch').map((r) => r.symbol));
       extra.push(...Object.keys(rows.find((r) => r.kind === 'targets')?.data?.targets || {}));
     }
