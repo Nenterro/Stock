@@ -1,4 +1,4 @@
-import { fetchHistoricalFxRate } from './api';
+import { fetchHistoricalFxRate, fetchTextFromBackend } from './api';
 
 /**
  * Interactive Brokers (IBKR) Flex Query & Statement Parser
@@ -258,27 +258,16 @@ export async function syncIbkrFlexService({ token, queryId }, onLog = () => {}) 
 
   onLog('--- Initiating IBKR Flex Web Service Connection ---');
   
-  // Step 1: Try proxy via local backend on port 3005 if available, otherwise direct
-  const requestUrl = `https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest?t=${encodeURIComponent(trimmedToken)}&q=${encodeURIComponent(trimmedQueryId)}&v=3`;
-  
+  // Step 1: IBKR doesn't allow browser requests (no CORS), so the home
+  // server relays them. The token never goes to a third-party proxy.
   let refCode = null;
   onLog('Requesting statement generation from Interactive Brokers...');
 
   try {
-    let responseText = null;
-    try {
-      const res = await fetch(`http://localhost:3005/api/ibkr/request?t=${encodeURIComponent(trimmedToken)}&q=${encodeURIComponent(trimmedQueryId)}`);
-      if (res.ok) {
-        responseText = await res.text();
-      }
-    } catch (e) {
-      // Fallback direct or CORS proxy
-      const directRes = await fetch(`https://corsproxy.io/?${encodeURIComponent(requestUrl)}`);
-      if (directRes.ok) responseText = await directRes.text();
-    }
+    const responseText = await fetchTextFromBackend(`/api/ibkr/request?t=${encodeURIComponent(trimmedToken)}&q=${encodeURIComponent(trimmedQueryId)}`);
 
     if (!responseText) {
-      throw new Error('Failed to connect to IBKR Flex Web Service.');
+      throw new Error('Could not reach the home server to relay the request to IBKR.');
     }
 
     // Parse Reference Code XML
@@ -303,31 +292,33 @@ export async function syncIbkrFlexService({ token, queryId }, onLog = () => {}) 
   }
 
   // Step 2: Poll for statement generation
-  const downloadUrl = `https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement?q=${encodeURIComponent(refCode)}&t=${encodeURIComponent(trimmedToken)}&v=3`;
-  
   let csvReport = '';
   for (let attempt = 1; attempt <= 15; attempt++) {
     await new Promise(r => setTimeout(r, 4000));
     onLog(`Polling statement readiness (Attempt ${attempt}/15)...`);
 
-    try {
-      let bodyText = null;
-      try {
-        const res = await fetch(`http://localhost:3005/api/ibkr/statement?q=${encodeURIComponent(refCode)}&t=${encodeURIComponent(trimmedToken)}`);
-        if (res.ok) bodyText = await res.text();
-      } catch (e) {
-        const directRes = await fetch(`https://corsproxy.io/?${encodeURIComponent(downloadUrl)}`);
-        if (directRes.ok) bodyText = await directRes.text();
-      }
-
-      if (bodyText && !bodyText.includes('<ErrorCode>') && !bodyText.includes('<Status>Warn</Status>')) {
-        csvReport = bodyText;
-        onLog(`✅ Statement downloaded successfully (${csvReport.length} bytes)!`);
-        break;
-      }
-    } catch (e) {
+    const bodyText = await fetchTextFromBackend(`/api/ibkr/statement?q=${encodeURIComponent(refCode)}&t=${encodeURIComponent(trimmedToken)}`);
+    if (!bodyText) {
       onLog('Generating on IBKR servers...');
+      continue;
     }
+
+    if (bodyText.includes('<FlexStatementResponse')) {
+      // 1019 = still generating; anything else is a real failure worth showing.
+      const code = bodyText.match(/<ErrorCode>(\d+)<\/ErrorCode>/)?.[1];
+      if (code === '1019' || bodyText.includes('<Status>Warn</Status>')) continue;
+      const msg = bodyText.match(/<ErrorMessage>([^<]*)<\/ErrorMessage>/)?.[1] || 'IBKR returned an error.';
+      onLog(`❌ IBKR error ${code || ''}: ${msg}`);
+      throw new Error(msg);
+    }
+
+    if (bodyText.trimStart().startsWith('<')) {
+      throw new Error('IBKR sent the statement as XML. In Client Portal, edit the Flex Query and set its Format to CSV, then try again.');
+    }
+
+    csvReport = bodyText;
+    onLog(`✅ Statement downloaded successfully (${csvReport.length} bytes)!`);
+    break;
   }
 
   if (!csvReport) {

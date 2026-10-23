@@ -69,6 +69,27 @@ export async function fetchFromBackend(path, options = {}) {
   return null;
 }
 
+// Same failover as fetchFromBackend, for routes that answer with text or XML.
+export async function fetchTextFromBackend(path, { timeout = 30000 } = {}) {
+  const urls = getBackendUrls();
+  const ordered = lastSuccessfulBackend
+    ? [lastSuccessfulBackend, ...urls.filter(u => u !== lastSuccessfulBackend)]
+    : urls;
+
+  for (const baseUrl of ordered) {
+    try {
+      const res = await fetch(`${baseUrl}${path}`, { signal: AbortSignal.timeout(timeout) });
+      if (!res.ok) continue;
+      lastSuccessfulBackend = baseUrl;
+      return await res.text();
+    } catch (err) {
+      if (baseUrl === lastSuccessfulBackend) lastSuccessfulBackend = null;
+      console.warn(`Backend request to ${baseUrl} failed:`, err.message);
+    }
+  }
+  return null;
+}
+
 // Health Check to determine backend status & active server URL
 export async function checkBackendHealth() {
   const urls = getBackendUrls();
