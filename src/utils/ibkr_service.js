@@ -31,17 +31,12 @@ export function splitCsvLine(line) {
   return result;
 }
 
-// Parse IBKR date formats: "YYYY-MM-DD", "YYYYMMDD", "YYYY-MM-DD;HH:MM:SS", "YYYY-MM-DD HH:MM:SS"
+// Parse IBKR date formats: "YYYY-MM-DD", "YYYYMMDD", and either with a time
+// after ";" or " " (Date/Time columns default to "YYYYMMDD;HHMMSS").
 export function parseIbkrDate(raw) {
   if (!raw) return new Date().toISOString().split('T')[0];
-  const cleaned = raw.trim().replace(/"/g, '');
-  
-  if (cleaned.includes(';')) {
-    return cleaned.split(';')[0].trim();
-  }
-  if (cleaned.includes(' ')) {
-    return cleaned.split(' ')[0].trim();
-  }
+  const cleaned = raw.trim().replace(/"/g, '').split(/[; ]/)[0].trim();
+
   if (cleaned.includes('-')) {
     return cleaned;
   }
