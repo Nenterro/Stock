@@ -23,7 +23,6 @@ export default function Graph() {
   const [displayCurrency, setDisplayCurrency] = useState(baseCurrency || 'USD');
   const [period, setPeriod] = useState('All Time');
   const [chartMode, setChartMode] = useState('value'); // 'value' | 'gain'
-  const [metricSelector, setMetricSelector] = useState('mwr'); // 'mwr' | 'twr'
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPortrait, setIsPortrait] = useState(() => window.innerHeight > window.innerWidth);
 
@@ -158,7 +157,7 @@ export default function Graph() {
       periodReturnPct = (periodGain / startVal) * 100.0;
     } else {
       // Already re-based to the window by rebaseSeries.
-      periodReturnPct = metricSelector === 'mwr' ? endPt.mwrPct : endPt.twrPct;
+      periodReturnPct = endPt.mwrPct;
       periodGain = endPt.pnl - startPt.pnl;
     }
 
@@ -168,7 +167,7 @@ export default function Graph() {
       periodGain,
       periodReturnPct
     };
-  }, [filteredTimeSeries, chartMode, metricSelector]);
+  }, [filteredTimeSeries, chartMode]);
 
   // Currency Toggle Pill
   const renderCurrencyTogglePill = () => (
@@ -209,12 +208,6 @@ export default function Graph() {
             <span className="tooltip-label">Unrealized P&amp;L:</span>
             <span className="tooltip-val" style={{ color: data.unrealizedPnl >= 0 ? '#10b981' : '#ef4444' }}>
               {data.unrealizedPnl >= 0 ? '+' : '-'}{getCurrencySymbol(displayCurrency)}{formatCurrency(Math.abs(data.unrealizedPnl || 0))}
-            </span>
-          </div>
-          <div className="tooltip-row">
-            <span className="tooltip-label">TWR:</span>
-            <span className="tooltip-val" style={{ color: data.twrPct >= 0 ? '#10b981' : '#ef4444' }}>
-              {data.twrPct >= 0 ? '+' : ''}{data.twrPct?.toFixed(2)}%
             </span>
           </div>
           <div className="tooltip-row">
@@ -281,13 +274,12 @@ export default function Graph() {
   const endPoint = rawTimeSeries.length > 0 ? rawTimeSeries[rawTimeSeries.length - 1] : null;
   const totalPortfolioValue = endPoint ? endPoint.value : 0;
   const totalGainDollars = endPoint ? endPoint.pnl : 0;
-  const allTimeTwr = endPoint ? endPoint.twrPct : 0;
   const allTimeMwr = endPoint ? endPoint.mwrPct : 0;
 
 
   const gradientOffset = () => {
     if (filteredTimeSeries.length === 0 || chartMode === 'value') return 0;
-    const dataKey = metricSelector === 'mwr' ? 'mwrPct' : 'twrPct';
+    const dataKey = 'mwrPct';
     const dataMax = Math.max(...filteredTimeSeries.map(i => i[dataKey] || 0));
     const dataMin = Math.min(...filteredTimeSeries.map(i => i[dataKey] || 0));
     
@@ -332,8 +324,7 @@ export default function Graph() {
     if (chartMode === 'value') {
       isRed = payload.value < payload.costBasis;
     } else {
-      const val = metricSelector === 'mwr' ? payload.mwrPct : payload.twrPct;
-      isRed = val < 0;
+      isRed = payload.mwrPct < 0;
     }
     return <circle cx={cx} cy={cy} r={4} fill={isRed ? '#ef4444' : '#10b981'} stroke="#1f2937" strokeWidth={2} />;
   };
@@ -392,35 +383,17 @@ export default function Graph() {
           </div>
         </div>
 
-        {/* MWR & TWR Performance Pill Selectors */}
+        {/* MWR pill: switches the chart to cumulative MWR % */}
         <div className="graph-perf-pills">
           <button 
             type="button"
-            className={`perf-pill ${allTimeMwr >= 0 ? 'positive' : 'negative'} ${chartMode === 'gain' && metricSelector === 'mwr' ? 'active-selector' : ''}`}
-            onClick={() => {
-              setMetricSelector('mwr');
-              setChartMode('gain');
-            }}
+            className={`perf-pill ${allTimeMwr >= 0 ? 'positive' : 'negative'} ${chartMode === 'gain' ? 'active-selector' : ''}`}
+            onClick={() => setChartMode('gain')}
             title="Graph MWR Gain (%)"
           >
             <span className="perf-label">MWR</span>
             <span className="perf-value">
               {allTimeMwr >= 0 ? '+' : ''}{allTimeMwr.toFixed(2)}%
-            </span>
-          </button>
-
-          <button 
-            type="button"
-            className={`perf-pill ${allTimeTwr >= 0 ? 'positive' : 'negative'} ${chartMode === 'gain' && metricSelector === 'twr' ? 'active-selector' : ''}`}
-            onClick={() => {
-              setMetricSelector('twr');
-              setChartMode('gain');
-            }}
-            title="Graph TWR Gain (%)"
-          >
-            <span className="perf-label">TWR</span>
-            <span className="perf-value">
-              {allTimeTwr >= 0 ? '+' : ''}{allTimeTwr.toFixed(2)}%
             </span>
           </button>
         </div>
@@ -587,7 +560,7 @@ export default function Graph() {
                 ) : (
                   <Area
                     type="monotone"
-                    dataKey={metricSelector === 'mwr' ? 'mwrPct' : 'twrPct'}
+                    dataKey="mwrPct"
                     stroke="url(#splitColor)"
                     strokeWidth={2.5}
                     fillOpacity={1}

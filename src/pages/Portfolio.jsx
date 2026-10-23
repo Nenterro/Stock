@@ -228,16 +228,14 @@ export default function Portfolio() {
     };
   }, [filteredTransactions, livePrices, exchangeRates, displayCurrency, filterState]);
 
-    // Both figures come from the same daily series the Graph page draws, so the
-    // two pages always report identical returns.
-    const { mwrPercent, twrPercent } = useMemo(() => {
+    // From the same daily series the Graph page draws, so the two pages always
+    // report identical returns.
+    const mwrPercent = useMemo(() => {
       const currentFxRate = exchangeRates?.PKR || 278.0;
       const series = generatePortfolioTimeSeries(
         filteredTransactions, livePrices, historicalPrices, displayCurrency, currentFxRate, fxSeries
       );
-      if (series.length === 0) return { mwrPercent: 0, twrPercent: 0 };
-      const last = series[series.length - 1];
-      return { mwrPercent: last.mwrPct, twrPercent: last.twrPct };
+      return series.length ? series[series.length - 1].mwrPct : 0;
     }, [filteredTransactions, displayCurrency, exchangeRates, livePrices, historicalPrices, fxSeries]);
 
   // Search filter
@@ -419,12 +417,6 @@ export default function Portfolio() {
                   {mwrPercent >= 0 ? '+' : ''}{mwrPercent.toFixed(2)}%
                 </span>
               </div>
-              <div className={`perf-pill ${twrPercent >= 0 ? 'positive' : 'negative'}`}>
-                <span className="perf-label">TWR</span>
-                <span className="perf-value">
-                  {twrPercent >= 0 ? '+' : ''}{twrPercent.toFixed(2)}%
-                </span>
-              </div>
             </div>
           </div>
         </div>
@@ -435,12 +427,6 @@ export default function Portfolio() {
             <span className="perf-label">MWR</span>
             <span className="perf-value">
               {mwrPercent >= 0 ? '+' : ''}{mwrPercent.toFixed(2)}%
-            </span>
-          </div>
-          <div className={`perf-pill glass-panel ${twrPercent >= 0 ? 'positive' : 'negative'}`}>
-            <span className="perf-label">TWR</span>
-            <span className="perf-value">
-              {twrPercent >= 0 ? '+' : ''}{twrPercent.toFixed(2)}%
             </span>
           </div>
         </div>
