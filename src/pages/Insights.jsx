@@ -28,7 +28,7 @@ export function InsightCard({ insight, defaultOpen = false, onDelete }) {
   const [open, setOpen] = useState(defaultOpen);
   const m = insight.meta || {};
   return (
-    <article className="rs-panel" style={{ padding: '14px 16px', marginBottom: 10, background: 'rgba(255,255,255,0.025)' }}>
+    <article className="rs-panel" style={{ padding: '16px 20px', marginBottom: 12, background: 'rgba(255,255,255,0.025)', boxShadow: 'none', borderRadius: 16 }}>
       <button
         type="button"
         onClick={() => setOpen(!open)}

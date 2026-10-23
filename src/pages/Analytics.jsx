@@ -101,7 +101,9 @@ export default function Analytics() {
   if (!transactions?.length) {
     return (
       <div className="rs-page">
-        <h1 className="rs-title">Portfolio X-ray</h1>
+        <div className="rs-header">
+          <h1 className="rs-title">Portfolio X-ray</h1>
+        </div>
         <Panel>
           <Empty title="No transactions yet">Add or import trades and the X-ray will break your portfolio down here.</Empty>
         </Panel>
