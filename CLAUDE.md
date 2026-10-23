@@ -83,7 +83,9 @@ and to write analyses back into the app.
 - Smoke test: `node mcp/scripts/check.js [tool] ['{json args}']`.
 
 The backend side of the research features (all in `~/Docker/stock-api/lib/`):
-`fundamentals.js`, `holdings.js` (fund look-through), `technicals.js`,
+`fundamentals.js`, `holdings.js` (fund look-through: complete daily
+holdings files from iShares for ISDE/ISDU/ISWD via `providers/ishares.js`,
+top 10 from justETF/Yahoo for other funds), `technicals.js`,
 `screener.js` (nightly snapshot in `data/screener.json`), `overrides.js`
 (manual fund/fundamentals data, `data/overrides.json`), `taxonomy.js` (one
 sector vocabulary across PSX, Yahoo and justETF). Write routes need
