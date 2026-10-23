@@ -342,35 +342,7 @@
     font-size: 10px;
   }
 }
-/* Hero Metrics & Performance Pills */
-.hero-metrics-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 12px;
-  flex-wrap: wrap;
-}
-.hero-metrics {
-  display: flex;
-  gap: 24px;
-}
-.metric-col {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.metric-label {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-.metric-value {
-  font-size: 15px;
-  font-weight: 600;
-}
-.metric-value.positive { color: #10b981; }
-.metric-value.negative { color: #ef4444; }
-
+/* Performance pills (shared look with Graph) */
 .performance-pills {
   display: flex;
   gap: 10px;
@@ -434,28 +406,25 @@
 }
 
 /* --- Portfolio hero -------------------------------------------------------
- * These lived in Home.css and reached Portfolio only because Home imported
- * that sheet globally. Clearing the Home page took the styles with it, so
- * they now live with the page that actually uses them.
+ * Two zones: what it's worth now (value, today's move, 30-day trend) on the
+ * left, how it got here (invested, total gain, MWR) on the right.
  */
-.total-balance-pill {
-  padding: 28px 24px;
-  border-radius: 24px;
-  display: flex;
-  flex-direction: column;
+.pf-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
   align-items: center;
-  justify-content: center;
+  padding: 28px 32px;
+  border-radius: 24px;
   background: var(--bg-surface-elevated, rgba(30, 30, 40, 0.7));
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  text-align: center;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
-  position: relative;
-  overflow: hidden;
 }
 
-.total-balance-pill::before {
+.pf-hero::before {
   content: '';
   position: absolute;
   top: 0;
@@ -466,69 +435,130 @@
   background: linear-gradient(90deg, transparent, var(--accent-color, #10b981), transparent);
 }
 
-.balance-label {
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
+.pf-hero-now {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-right: 32px;
+  min-width: 0;
 }
 
-.balance-amount {
-  font-size: clamp(30px, 8vw, 52px);
-  line-height: 1.1;
+.pf-hero-label,
+.pf-stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.pf-hero-value {
+  font-size: clamp(34px, 3.6vw, 52px);
+  line-height: 1.05;
   font-weight: 800;
-  background: linear-gradient(135deg, #ffffff 30%, var(--accent-color, #10b981) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  margin: 0;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+.pf-day-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-day-chip.positive { color: #10b981; background: rgba(16, 185, 129, 0.12); }
+.pf-day-chip.negative { color: #ef4444; background: rgba(239, 68, 68, 0.12); }
+.pf-day-pct { opacity: 0.85; }
+.pf-day-when { color: var(--text-muted); font-weight: 500; }
+
+.pf-spark {
+  width: 100%;
+  max-width: 340px;
+  height: 44px;
+  margin-top: 6px;
+  overflow: visible;
+}
+
+.pf-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  padding-left: 32px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  align-self: stretch;
+  align-content: center;
+}
+
+.pf-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pf-stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pf-stat-value.positive { color: #10b981; }
+.pf-stat-value.negative { color: #ef4444; }
+
+.pf-stat-sub {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1100px) {
+  .pf-stat-value { font-size: 21px; }
+}
+
 @media (max-width: 768px) {
-  .total-balance-pill {
-    padding: 22px 16px;
+  .pf-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 22px 18px;
   }
 
-  .hero-metrics-row {
-    margin-top: 16px;
-    width: 100%;
-  }
-
-  /* Was a left-hugging flex row, so the figures crowded into part of the card
-     with the rest empty. Split the width evenly and divide them. */
-  .hero-metrics {
-    width: 100%;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0;
-    padding-top: 14px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .metric-col {
+  .pf-hero-now {
     align-items: center;
     text-align: center;
-    gap: 5px;
-    padding: 0 8px;
+    padding-right: 0;
   }
 
-  .metric-col + .metric-col {
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
+  .pf-spark { max-width: none; }
+
+  .pf-hero-stats {
+    padding: 16px 0 0;
+    margin-top: 16px;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    gap: 0;
   }
 
-  .metric-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--text-muted);
+  .pf-stat {
+    align-items: center;
+    text-align: center;
+    padding: 0 6px;
   }
 
-  .metric-value {
-    font-size: 16px;
-    font-weight: 700;
-    white-space: nowrap;
-  }
+  .pf-stat + .pf-stat { border-left: 1px solid rgba(255, 255, 255, 0.08); }
+  .pf-stat-label { font-size: 10.5px; }
+  .pf-stat-value { font-size: 16px; }
+  .pf-stat-sub { display: none; }
 }

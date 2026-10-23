@@ -10,6 +10,40 @@ import { formatCurrency, getCurrencySymbol, displayTicker } from '../utils/forma
 import { generatePortfolioTimeSeries } from '../utils/portfolio_math';
 import './Portfolio.css';
 
+function HeroStat({ label, value, sub, tone }) {
+  const cls = tone == null ? '' : tone >= 0 ? 'positive' : 'negative';
+  return (
+    <div className="pf-stat">
+      <span className="pf-stat-label">{label}</span>
+      <span className={`pf-stat-value ${cls}`}>{value}</span>
+      {sub && <span className="pf-stat-sub">{sub}</span>}
+    </div>
+  );
+}
+
+/** Last 30 days of portfolio value, drawn small; green or red by direction. */
+function Sparkline({ points = [] }) {
+  if (points.length < 2) return null;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const span = max - min || 1;
+  const xy = points.map((v, i) => [(i / (points.length - 1)) * 100, 28 - ((v - min) / span) * 26]);
+  const line = xy.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+  const color = points[points.length - 1] >= points[0] ? '#10b981' : '#ef4444';
+  return (
+    <svg className="pf-spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label="Portfolio value, last 30 days">
+      <defs>
+        <linearGradient id="pfSparkFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={`0,30 ${line} 100,30`} fill="url(#pfSparkFill)" />
+      <polyline points={line} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
 export default function Portfolio() {
   const { transactions, livePrices, historicalPrices, fxSeries, exchangeRates } = useData();
   const { baseCurrency, setBaseCurrency } = useAppearanceSettings();
@@ -57,9 +91,10 @@ export default function Portfolio() {
   }, [transactions, filterState]);
 
   // Aggregate positions (Holdings & Closed Positions) with historical FX conversion & amount filters
-  const { holdingsList, closedList, totalMarketValue, totalUnrealizedPnL, totalRealizedPnL, totalDayChange } = useMemo(() => {
+  const { holdingsList, closedList, totalMarketValue, totalUnrealizedPnL, totalRealizedPnL, totalDayChange, totalInvested, totalIncome } = useMemo(() => {
     const positionMap = {};
     const currentFxRate = exchangeRates?.PKR || 278.0;
+    let totIncome = 0;
 
     filteredTransactions.forEach(tx => {
       const ticker = (tx.asset || tx.ticker || 'UNKNOWN').toUpperCase();
@@ -98,6 +133,13 @@ export default function Portfolio() {
       } else if (type === 'dividend') {
         p.dividendIncome += Number(tx.amount) || 0;
       }
+
+      // Dividends net of withholding, at the rate on the day they were paid.
+      if (type === 'dividend' || type === 'tax') {
+        const amt = (type === 'dividend' ? 1 : -1) * Math.abs(Number(tx.amount) || 0);
+        const ccy = tx.currency || p.currency;
+        totIncome += ccy === displayCurrency ? amt : displayCurrency === 'USD' ? amt / fxDate : amt * fxDate;
+      }
     });
 
     const holdings = [];
@@ -106,6 +148,7 @@ export default function Portfolio() {
     let totUnrealized = 0;
     let totRealized = 0;
     let totDayChange = 0;
+    let totInvested = 0;
 
     const minVal = filterState.minAmount ? parseFloat(filterState.minAmount) : null;
     const maxVal = filterState.maxAmount ? parseFloat(filterState.maxAmount) : null;
@@ -159,6 +202,7 @@ export default function Portfolio() {
         if (passFilter) {
           totMarketVal += marketValue;
           totUnrealized += unrealizedPnL;
+          totInvested += costBasis;
           // Today's move in value: what the position was worth before the
           // quote's change. FX moves within the day are not included.
           if (change24hPercent > -100) totDayChange += marketValue - marketValue / (1 + change24hPercent / 100);
@@ -229,19 +273,29 @@ export default function Portfolio() {
       totalMarketValue: totMarketVal,
       totalUnrealizedPnL: totUnrealized,
       totalRealizedPnL: totRealized,
-      totalDayChange: totDayChange
+      totalDayChange: totDayChange,
+      totalInvested: totInvested,
+      totalIncome: totIncome
     };
   }, [filteredTransactions, livePrices, exchangeRates, displayCurrency, filterState]);
 
     // From the same daily series the Graph page draws, so the two pages always
     // report identical returns.
-    const mwrPercent = useMemo(() => {
+    const { mwrPercent, sparkline } = useMemo(() => {
       const currentFxRate = exchangeRates?.PKR || 278.0;
       const series = generatePortfolioTimeSeries(
         filteredTransactions, livePrices, historicalPrices, displayCurrency, currentFxRate, fxSeries
       );
-      return series.length ? series[series.length - 1].mwrPct : 0;
+      return {
+        mwrPercent: series.length ? series[series.length - 1].mwrPct : 0,
+        sparkline: series.slice(-30).map((pt) => pt.value)
+      };
     }, [filteredTransactions, displayCurrency, exchangeRates, livePrices, historicalPrices, fxSeries]);
+
+  const sym = getCurrencySymbol(displayCurrency);
+  const signed = (v) => `${v >= 0 ? '+' : '−'}${sym}${formatCurrency(Math.abs(v))}`;
+  const totalGain = totalUnrealizedPnL + totalRealizedPnL + totalIncome;
+  const dayPct = totalMarketValue - totalDayChange > 0 ? (totalDayChange / (totalMarketValue - totalDayChange)) * 100 : null;
 
   // Search filter
   const displayedPositions = useMemo(() => {
@@ -391,59 +445,34 @@ export default function Portfolio() {
           </div>
         </div>
 
-        {/* Total Balance Hero Pill */}
-        <div className="glass-panel total-balance-pill">
-          <div className="balance-label">Portfolio Value</div>
-          <div className="balance-amount">
-            {getCurrencySymbol(displayCurrency)}{formatCurrency(totalMarketValue)}
-          </div>
-          
-          <div className="hero-metrics-row">
-            <div className="hero-metrics">
-              <div className="metric-col">
-                <span className="metric-label">24h Change</span>
-                <span className={`metric-value ${totalDayChange >= 0 ? 'positive' : 'negative'}`}>
-                  {totalDayChange >= 0 ? '+' : '-'}{getCurrencySymbol(displayCurrency)}{formatCurrency(Math.abs(totalDayChange))}
-                  {totalMarketValue - totalDayChange > 0 && (
-                    <span style={{ fontSize: '0.8em', opacity: 0.85, marginLeft: 6 }}>
-                      ({totalDayChange >= 0 ? '+' : ''}{((totalDayChange / (totalMarketValue - totalDayChange)) * 100).toFixed(2)}%)
-                    </span>
-                  )}
-                </span>
-              </div>
-              <div className="metric-col">
-                <span className="metric-label">Unrealized P&L</span>
-                <span className={`metric-value ${totalUnrealizedPnL >= 0 ? 'positive' : 'negative'}`}>
-                  {totalUnrealizedPnL >= 0 ? '+' : ''}{getCurrencySymbol(displayCurrency)}{formatCurrency(totalUnrealizedPnL)}
-                </span>
-              </div>
-              <div className="metric-col">
-                <span className="metric-label">Realized P&L</span>
-                <span className={`metric-value ${totalRealizedPnL >= 0 ? 'positive' : 'negative'}`}>
-                  {totalRealizedPnL >= 0 ? '+' : ''}{getCurrencySymbol(displayCurrency)}{formatCurrency(totalRealizedPnL)}
-                </span>
-              </div>
+        {/* Hero: what the portfolio is worth now (left), how it got here (right) */}
+        <div className="glass-panel pf-hero">
+          <div className="pf-hero-now">
+            <div className="pf-hero-label">Portfolio value</div>
+            <div className="pf-hero-value">{sym}{formatCurrency(totalMarketValue)}</div>
+            <div className={`pf-day-chip ${totalDayChange >= 0 ? 'positive' : 'negative'}`}>
+              {totalDayChange >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              <span>{signed(totalDayChange)}</span>
+              {dayPct != null && <span className="pf-day-pct">{totalDayChange >= 0 ? '+' : ''}{dayPct.toFixed(2)}%</span>}
+              <span className="pf-day-when">today</span>
             </div>
-            
-            {/* Desktop: Performance Pills inside main pill below balance-amount */}
-            <div className="performance-pills desktop-only">
-              <div className={`perf-pill ${mwrPercent >= 0 ? 'positive' : 'negative'}`}>
-                <span className="perf-label">MWR</span>
-                <span className="perf-value">
-                  {mwrPercent >= 0 ? '+' : ''}{mwrPercent.toFixed(2)}%
-                </span>
-              </div>
-            </div>
+            <Sparkline points={sparkline} />
           </div>
-        </div>
 
-        {/* Mobile: Performance Pills outside and below main hero pill */}
-        <div className="performance-pills mobile-only">
-          <div className={`perf-pill glass-panel ${mwrPercent >= 0 ? 'positive' : 'negative'}`}>
-            <span className="perf-label">MWR</span>
-            <span className="perf-value">
-              {mwrPercent >= 0 ? '+' : ''}{mwrPercent.toFixed(2)}%
-            </span>
+          <div className="pf-hero-stats">
+            <HeroStat label="Invested" value={`${sym}${formatCurrency(totalInvested)}`} sub="cost of current holdings" />
+            <HeroStat
+              label="Total gain"
+              value={signed(totalGain)}
+              tone={totalGain}
+              sub={`${signed(totalUnrealizedPnL)} unrealised · ${signed(totalRealizedPnL + totalIncome)} realised & income`}
+            />
+            <HeroStat
+              label="Return (MWR)"
+              value={`${mwrPercent >= 0 ? '+' : ''}${mwrPercent.toFixed(2)}%`}
+              tone={mwrPercent}
+              sub="on the money you put in"
+            />
           </div>
         </div>
 
