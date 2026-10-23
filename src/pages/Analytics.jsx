@@ -141,7 +141,7 @@ export default function Analytics() {
   const vs = (symbol) => x?.benchmarks?.find((b) => b.symbol === symbol)?.oneYear || null;
   const spx = vs('^GSPC');
   const kse = vs('KSE100TR');
-  const assetMix = lt?.assetClasses?.map((a) => `${fmtPct(a.weight, { digits: a.weight < 0.01 ? 1 : 0 })} ${a.key.toLowerCase()}`).join(', ');
+  const fundShare = lt?.total > 0 ? lt.funds.reduce((a, f) => a + f.value, 0) / lt.total : 0;
 
   return (
     <div className="rs-page">
@@ -159,27 +159,19 @@ export default function Analytics() {
       {ready && x?.warnings?.map((w) => <Notice key={w}>{w}</Notice>)}
 
       {x && (
-        <div className="rs-stats">
+        <div className="rs-stats rs-stats-6">
           <Stat
             label="Return a year"
             value={fmtPct((lastPoint?.mwrAnnualPct ?? 0) / 100, { signed: true })}
             tone={toneOf(lastPoint?.mwrAnnualPct)}
             sub={series.length ? `money-weighted, since ${series[0].date.slice(0, 7)}` : null}
           />
-          {spx && (
+          {(spx || kse) && (
             <Stat
-              label="1Y vs S&P 500"
-              value={`${spx.excessReturn >= 0 ? '+' : '−'}${fmtNum(Math.abs(spx.excessReturn * 100), 1)} pts`}
-              tone={toneOf(spx.excessReturn)}
-              sub={`you ${fmtPct(spx.portfolioReturn, { signed: true })} · index ${fmtPct(spx.benchmarkReturn, { signed: true })}`}
-            />
-          )}
-          {kse && (
-            <Stat
-              label="1Y vs KSE-100"
-              value={`${kse.excessReturn >= 0 ? '+' : '−'}${fmtNum(Math.abs(kse.excessReturn * 100), 1)} pts`}
-              tone={toneOf(kse.excessReturn)}
-              sub={`you ${fmtPct(kse.portfolioReturn, { signed: true })} · index ${fmtPct(kse.benchmarkReturn, { signed: true })}`}
+              label="Last year vs markets"
+              value={fmtPct((spx || kse).portfolioReturn, { signed: true })}
+              tone={toneOf((spx || kse).portfolioReturn)}
+              sub={[spx && `S&P 500 ${fmtPct(spx.benchmarkReturn, { signed: true })}`, kse && `KSE-100 ${fmtPct(kse.benchmarkReturn, { signed: true })}`].filter(Boolean).join(' · ')}
             />
           )}
           <Stat label="Volatility (1Y)" value={fmtPct(r1?.volatility)} sub={r1 ? `max drawdown ${fmtPct(r1.maxDrawdown)}` : null} />
@@ -245,16 +237,35 @@ export default function Analytics() {
         )}
       </Panel>
 
-      <div className="rs-grid">
+      <div className="rs-grid-3">
         <Panel title="Sectors" subtitle="Look-through, all holdings and funds">
-          {lt && ready ? <BarList rows={lt.sectors.map((s) => ({ key: s.key, label: s.key, weight: s.weight }))} /> : <Skeleton />}
+          {lt && ready ? <BarList rows={lt.sectors.map((s) => ({ key: s.key, label: s.key, weight: s.weight }))} limit={10} /> : <Skeleton />}
         </Panel>
         <Panel title="Countries" subtitle="Where the underlying companies are">
-          {lt && ready ? <BarList rows={lt.countries.map((s) => ({ key: s.key, label: s.key, weight: s.weight }))} color="var(--series-3)" /> : <Skeleton />}
+          {lt && ready ? <BarList rows={lt.countries.map((s) => ({ key: s.key, label: s.key, weight: s.weight }))} color="var(--series-3)" limit={10} /> : <Skeleton />}
         </Panel>
-        <Panel title="Currency of listing" subtitle="What moves with PKR/USD">
-          {x ? <BarList rows={x.currencyExposure.map((s) => ({ key: s.key, label: s.key, weight: s.weight }))} color="var(--series-4)" /> : <Skeleton />}
-          {assetMix && ready && <p className="rs-panel-sub" style={{ marginTop: 14 }}>Asset mix: {assetMix}.</p>}
+        <Panel title="Mix" subtitle="How the money is split">
+          {lt && x && ready ? (
+            <div className="rs-mix">
+              <MixBar
+                label="Listing currency"
+                parts={x.currencyExposure.map((c, i) => ({ key: c.key, label: c.key, weight: c.weight, color: ['var(--series-4)', 'var(--series-1)', 'var(--series-7)'][i % 3] }))}
+              />
+              <MixBar
+                label="How it's held"
+                parts={[
+                  { key: 'direct', label: 'Directly', weight: Math.max(0, 1 - fundShare), color: 'var(--series-1)' },
+                  { key: 'funds', label: 'Through funds', weight: fundShare, color: 'var(--series-2)' }
+                ]}
+              />
+              <MixBar
+                label="Asset class"
+                parts={lt.assetClasses.map((c, i) => ({ key: c.key, label: c.key, weight: c.weight, color: ['var(--series-3)', 'var(--series-4)', 'var(--series-7)', 'var(--series-5)'][i % 4] }))}
+              />
+            </div>
+          ) : (
+            <Skeleton />
+          )}
         </Panel>
       </div>
 
@@ -316,18 +327,18 @@ export default function Analytics() {
         )}
       </Panel>
 
-      <div className="rs-grid-2">
-        <Panel
-          title="Where the gains came from"
-          subtitle={`Each holding's gain ${range === '1Y' ? 'over the last year' : 'since you started'}: price, realised and dividends net of tax, sold positions included`}
-        >
-          {contribution?.rows?.length ? (
-            <ContributionBars rows={contribution.rows} total={contribution.total} currency={currency} />
-          ) : (
-            <Skeleton />
-          )}
-        </Panel>
+      <Panel
+        title="Where the gains came from"
+        subtitle={`Each holding's gain ${range === '1Y' ? 'over the last year' : 'since you started'}: price, realised and dividends net of tax, sold positions included`}
+      >
+        {contribution?.rows?.length ? (
+          <ContributionSplit rows={contribution.rows} total={contribution.total} currency={currency} />
+        ) : (
+          <Skeleton />
+        )}
+      </Panel>
 
+      <div className="rs-grid-2">
         <Panel
           title="Pakistan: shares vs the rupee"
           subtitle={`Your PSX gain in USD ${range === '1Y' ? 'over the last year' : 'since you started'}, split into what the share prices did and what the rupee did`}
@@ -336,7 +347,7 @@ export default function Analytics() {
             <Empty>No Pakistan holdings yet.</Empty>
           ) : (
             <>
-              <div className="rs-kv" style={{ marginBottom: 14 }}>
+              <div className="rs-kv rs-kv-3" style={{ marginBottom: 14 }}>
                 <div><dt>Gain in USD</dt><dd className={toneOf(fxSplit.usdGain)}>{fmtMoney(fxSplit.usdGain, 'USD')}</dd></div>
                 <div><dt>From share prices</dt><dd className={toneOf(fxSplit.priceEffect)}>{fmtMoney(fxSplit.priceEffect, 'USD')}</dd></div>
                 <div><dt>From the rupee</dt><dd className={toneOf(fxSplit.currencyEffect)}>{fmtMoney(fxSplit.currencyEffect, 'USD')}</dd></div>
@@ -356,29 +367,11 @@ export default function Analytics() {
             </>
           )}
         </Panel>
-      </div>
-
-      <div className="rs-grid-2">
-        <Panel title="Risk" subtitle={x?.risk?.oneYear ? `Trailing year to ${x.risk.oneYear.to}; risk-free rate ${fmtPct(x.risk.oneYear.riskFreeRate)}` : null}>
-          {r1 ? (
-            <div className="rs-kv">
-              <div><dt>Volatility</dt><dd>{fmtPct(r1.volatility)}</dd></div>
-              <div><dt>Max drawdown</dt><dd>{fmtPct(r1.maxDrawdown)}</dd></div>
-              <div><dt>Sharpe</dt><dd>{fmtNum(r1.sharpe)}</dd></div>
-              <div><dt>Sortino</dt><dd>{fmtNum(r1.sortino)}</dd></div>
-              <div><dt>Best day</dt><dd className="rs-gain">{fmtPct(r1.bestDay?.r, { signed: true })}</dd></div>
-              <div><dt>Worst day</dt><dd className="rs-loss">{fmtPct(r1.worstDay?.r, { signed: true })}</dd></div>
-              <div><dt>Top 5 weight</dt><dd>{fmtPct(x.concentration.positions.top5, { digits: 0 })}</dd></div>
-            </div>
-          ) : (
-            <Empty>Not enough history yet for risk statistics.</Empty>
-          )}
-        </Panel>
 
         <Panel title="Income" subtitle={x ? `Trailing 12 months, net of tax` : null}>
           {x ? (
             <>
-              <div className="rs-kv" style={{ marginBottom: 14 }}>
+              <div className="rs-kv rs-kv-3" style={{ marginBottom: 14 }}>
                 <div><dt>Dividends (12m)</dt><dd>{fmtMoney(x.income.trailing12m.net, currency)}</dd></div>
                 <div><dt>Current yield</dt><dd>{fmtPct(x.income.currentYield, { digits: 2 })}</dd></div>
                 <div><dt>Yield on cost</dt><dd>{fmtPct(x.income.yieldOnCost, { digits: 2 })}</dd></div>
@@ -399,51 +392,65 @@ export default function Analytics() {
         </Panel>
       </div>
 
-      <Panel title="Funds" subtitle="How much of each fund can be seen through, and what it costs you">
-        {!lt || !ready ? (
-          <Skeleton />
-        ) : lt.funds.length === 0 ? (
-          <Empty>No funds or ETFs in the portfolio.</Empty>
-        ) : (
-          <div className="rs-table-wrap">
-            <table className="rs-table">
-              <thead>
-                <tr>
-                  <th>Fund</th>
-                  <th className="num">Value</th>
-                  <th className="num">Disclosed</th>
-                  <th className="num">Holdings</th>
-                  <th className="num">Expense ratio</th>
-                  <th className="num">Cost / year</th>
-                  <th>Breakdown basis</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lt.funds.map((f) => (
-                  <tr key={f.ticker} className="clickable" onClick={() => navigate(`/research/${encodeURIComponent(f.ticker)}`)}>
-                    <td>
-                      <SymbolLink symbol={f.ticker} name={f.name} />
-                    </td>
-                    <td className="num">{fmtMoney(f.value, currency, { compact: true })}</td>
-                    <td className="num">{fmtPct(f.coverage, { digits: 0 })}</td>
-                    <td className="num">{f.holdingsCount ?? <span className="rs-muted">{f.listed} listed</span>}</td>
-                    <td className="num">{fmtPct(f.expenseRatio, { digits: 2 })}</td>
-                    <td className="num">{f.expenseRatio != null ? fmtMoney(f.value * f.expenseRatio, currency) : '—'}</td>
-                    <td>
-                      {f.override ? <Tag tone="info">manual</Tag> : f.countryBasis === 'fund' ? <Tag tone="good">full fund</Tag> : <Tag tone="warning">top holdings</Tag>}
-                    </td>
+      <div className="rs-grid-2">
+        <Panel title="Risk" subtitle={x?.risk?.oneYear ? `Trailing year to ${x.risk.oneYear.to}; risk-free rate ${fmtPct(x.risk.oneYear.riskFreeRate)}` : null}>
+          {r1 ? (
+            <div className="rs-kv rs-kv-3">
+              <div><dt>Volatility</dt><dd>{fmtPct(r1.volatility)}</dd></div>
+              <div><dt>Max drawdown</dt><dd>{fmtPct(r1.maxDrawdown)}</dd></div>
+              <div><dt>Sharpe</dt><dd>{fmtNum(r1.sharpe)}</dd></div>
+              <div><dt>Sortino</dt><dd>{fmtNum(r1.sortino)}</dd></div>
+              <div><dt>Best day</dt><dd className="rs-gain">{fmtPct(r1.bestDay?.r, { signed: true })}</dd></div>
+              <div><dt>Worst day</dt><dd className="rs-loss">{fmtPct(r1.worstDay?.r, { signed: true })}</dd></div>
+            </div>
+          ) : (
+            <Empty>Not enough history yet for risk statistics.</Empty>
+          )}
+        </Panel>
+
+        <Panel title="Funds" subtitle="How much of each fund can be seen through, and what it costs you">
+          {!lt || !ready ? (
+            <Skeleton />
+          ) : lt.funds.length === 0 ? (
+            <Empty>No funds or ETFs in the portfolio.</Empty>
+          ) : (
+            <div className="rs-table-wrap">
+              <table className="rs-table">
+                <thead>
+                  <tr>
+                    <th>Fund</th>
+                    <th className="num">Value</th>
+                    <th className="num">Disclosed</th>
+                    <th className="num">Fee</th>
+                    <th className="num">Cost / year</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {x.fees.annualCost > 0 && (
-              <p className="rs-panel-sub" style={{ marginTop: 10 }}>
-                Fund fees cost about {fmtMoney(x.fees.annualCost, currency)} a year, a {fmtPct(x.fees.portfolioDrag, { digits: 2 })} drag on the whole portfolio.
-              </p>
-            )}
-          </div>
-        )}
-      </Panel>
+                </thead>
+                <tbody>
+                  {lt.funds.map((f) => (
+                    <tr key={f.ticker} className="clickable" onClick={() => navigate(`/research/${encodeURIComponent(f.ticker)}`)}>
+                      <td>
+                        <SymbolLink symbol={f.ticker} name={f.name} />
+                      </td>
+                      <td className="num">{fmtMoney(f.value, currency, { compact: true })}</td>
+                      <td className="num" title={f.override ? 'Manual composition' : f.countryBasis === 'fund' ? 'Full holdings list' : 'Top holdings only'}>
+                        {fmtPct(f.coverage, { digits: 0 })}
+                        {f.countryBasis !== 'fund' && !f.override && <span className="rs-muted"> · top {f.listed}</span>}
+                      </td>
+                      <td className="num">{fmtPct(f.expenseRatio, { digits: 2 })}</td>
+                      <td className="num">{f.expenseRatio != null ? fmtMoney(f.value * f.expenseRatio, currency) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {x.fees.annualCost > 0 && (
+                <p className="rs-panel-sub" style={{ marginTop: 10 }}>
+                  Fund fees cost about {fmtMoney(x.fees.annualCost, currency)} a year, a {fmtPct(x.fees.portfolioDrag, { digits: 2 })} drag on the whole portfolio.
+                </p>
+              )}
+            </div>
+          )}
+        </Panel>
+      </div>
 
       {x?.correlations?.tickers?.length > 1 && <CorrelationPanel c={x.correlations} />}
 
@@ -501,12 +508,13 @@ function FragmentRow({ a, row, tickers }) {
  * Diverging bars around zero: gains to the right in green, losses to the left
  * in red, each labelled with its amount. Sold positions are marked.
  */
-function ContributionBars({ rows, total, currency }) {
-  const max = Math.max(...rows.map((r) => Math.abs(r.contribution)), 0.0001);
+function ContributionBars({ rows, total = null, currency, max: maxIn, oneSided = false }) {
+  const max = maxIn ?? Math.max(...rows.map((r) => Math.abs(r.contribution)), 0.0001);
   return (
     <div className="rs-bars">
       {rows.map((r) => {
-        const w = (Math.abs(r.contribution) / max) * 50;
+        // One-sided lists (only gains, or only losses) use the full width.
+        const w = (Math.abs(r.contribution) / max) * (oneSided ? 100 : 50);
         const up = r.contribution >= 0;
         return (
           <div
@@ -519,17 +527,17 @@ function ContributionBars({ rows, total, currency }) {
               {!r.held && <span className="rs-muted"> · sold</span>}
             </span>
             <span className="rs-bar-track" style={{ position: 'relative' }}>
-              <span style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,0.18)' }} />
+              {!oneSided && <span style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,0.18)' }} />}
               <span
                 className="rs-bar-fill"
                 style={{
                   position: 'absolute',
                   top: 0,
                   bottom: 0,
-                  left: up ? '50%' : `${50 - w}%`,
+                  left: oneSided ? 0 : up ? '50%' : `${50 - w}%`,
                   width: `${Math.max(w, 0.4)}%`,
                   background: up ? 'var(--gain)' : 'var(--loss)',
-                  borderRadius: up ? '0 4px 4px 0' : '4px 0 0 4px'
+                  borderRadius: oneSided ? '0 4px 4px 0' : up ? '0 4px 4px 0' : '4px 0 0 4px'
                 }}
               />
             </span>
@@ -537,10 +545,75 @@ function ContributionBars({ rows, total, currency }) {
           </div>
         );
       })}
+      {total != null && (
       <div className="rs-bar-row" style={{ borderTop: '1px solid var(--panel-border)', paddingTop: 8, marginTop: 2 }}>
         <span className="rs-bar-label" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Total</span>
         <span />
         <span className={`rs-bar-value ${toneOf(total)}`} style={{ fontWeight: 600 }}>{fmtMoney(total, currency, { compact: true })}</span>
+      </div>
+      )}
+    </div>
+  );
+}
+
+/** Gains on the left, losses on the right: the top eight of each, the rest summed. */
+function ContributionSplit({ rows, total, currency }) {
+  const LIMIT = 8;
+  const side = (list, label) => {
+    const shown = list.slice(0, LIMIT);
+    const rest = list.slice(LIMIT);
+    if (rest.length) {
+      shown.push({
+        ticker: `rest-${label}`,
+        name: rest.map((r) => r.ticker).join(', '),
+        label: `${rest.length} smaller`,
+        contribution: rest.reduce((a, r) => a + r.contribution, 0),
+        held: true
+      });
+    }
+    return shown;
+  };
+  const gains = rows.filter((r) => r.contribution >= 0);
+  const losses = rows.filter((r) => r.contribution < 0).sort((a, b) => a.contribution - b.contribution);
+  const max = Math.max(...rows.map((r) => Math.abs(r.contribution)), 0.0001);
+  const sum = (list) => list.reduce((a, r) => a + r.contribution, 0);
+  return (
+    <>
+      <div className="rs-grid-2 rs-contrib">
+        <div>
+          <div className="rs-contrib-head">Added <span className="rs-gain">{fmtMoney(sum(gains), currency, { compact: true })}</span></div>
+          {gains.length ? <ContributionBars rows={side(gains, 'gains')} max={max} currency={currency} oneSided /> : <Empty>Nothing gained in this period.</Empty>}
+        </div>
+        <div>
+          <div className="rs-contrib-head">Took away <span className="rs-loss">{fmtMoney(sum(losses), currency, { compact: true })}</span></div>
+          {losses.length ? <ContributionBars rows={side(losses, 'losses')} max={max} currency={currency} oneSided /> : <Empty>Nothing lost in this period.</Empty>}
+        </div>
+      </div>
+      <p className="rs-panel-sub" style={{ marginTop: 12 }}>
+        Net: <strong className={toneOf(total)}>{fmtMoney(total, currency)}</strong>
+      </p>
+    </>
+  );
+}
+
+/** One horizontal bar split into parts, with a legend underneath. */
+function MixBar({ label, parts }) {
+  const shown = parts.filter((p) => p.weight > 0.0005);
+  return (
+    <div className="rs-mix-row">
+      <div className="rs-mix-label">{label}</div>
+      <div className="rs-mix-bar">
+        {shown.map((p) => (
+          <span key={p.key} style={{ width: `${p.weight * 100}%`, background: p.color }} title={`${p.label}: ${fmtPct(p.weight, { digits: 1 })}`} />
+        ))}
+      </div>
+      <div className="rs-legend" style={{ margin: '8px 0 0' }}>
+        {shown.map((p) => (
+          <span key={p.key} className="rs-legend-item">
+            <span className="rs-swatch" style={{ background: p.color }} />
+            {p.label} {fmtPct(p.weight, { digits: p.weight < 0.01 ? 1 : 0 })}
+          </span>
+        ))}
       </div>
     </div>
   );

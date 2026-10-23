@@ -546,3 +546,53 @@
   .rs-panel { padding: 16px; border-radius: 18px; }
   .rs-chart { height: 280px; }
 }
+
+/* Analysis layout: fixed column counts so rows fill instead of leaving one or
+   two items stranded on a line of their own. */
+.rs-stats-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1400px) { .rs-stats-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .rs-stats-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.rs-grid-3 {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 1280px) { .rs-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rs-grid-3 > :last-child { grid-column: 1 / -1; } }
+@media (max-width: 1023px) { .rs-grid-3 { grid-template-columns: minmax(0, 1fr); } }
+
+.rs-kv-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* Mix panel: one split bar per breakdown */
+.rs-mix { display: flex; flex-direction: column; gap: 22px; }
+.rs-mix-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.rs-mix-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--track);
+  gap: 2px;
+}
+.rs-mix-bar span { height: 100%; min-width: 3px; }
+
+/* Contribution: gains and losses side by side */
+.rs-contrib { gap: 32px; }
+.rs-contrib-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--panel-border);
+}
+.rs-contrib-head span { font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; }
