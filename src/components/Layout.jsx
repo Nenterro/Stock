@@ -7,16 +7,23 @@ import MoreMenuModal from './MoreMenuModal';
 import { useData } from '../context/DataContext';
 import './Layout.css';
 
-const NAV_ITEMS = [
-  { path: '/', label: 'Home', icon: Home },
-  { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
-  { path: '/graph', label: 'Graph', icon: LineChart },
-  { path: '/analytics', label: 'X-ray', icon: BarChart2 },
-  { path: '/watchlist', label: 'Watchlist', icon: Eye },
-  { path: '/screener', label: 'Screener', icon: Filter },
-  { path: '/insights', label: 'Insights', icon: Sparkles },
-  { path: '/planner', label: 'Planner', icon: Target },
-  { path: '/transactions', label: 'Transactions', icon: Menu },
+// Home sits above both halves; tracking is what you own, planning is what you might do next.
+const NAV_SECTIONS = [
+  [
+    { path: '/', label: 'Home', icon: Home },
+  ],
+  [
+    { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
+    { path: '/graph', label: 'Graph', icon: LineChart },
+    { path: '/transactions', label: 'Transactions', icon: Menu },
+    { path: '/analytics', label: 'X-ray', icon: BarChart2 },
+  ],
+  [
+    { path: '/screener', label: 'Screener', icon: Filter },
+    { path: '/watchlist', label: 'Watchlist', icon: Eye },
+    { path: '/insights', label: 'Insights', icon: Sparkles },
+    { path: '/planner', label: 'Planner', icon: Target },
+  ],
 ];
 
 function GradientDef() {
@@ -61,11 +68,15 @@ function Sidebar({ isPinned, togglePin, onOpenAdd, backendStatus }) {
             <Plus size={20} className="nav-icon" />
             <span className="nav-label">Add Transaction</span>
           </button>
-          {NAV_ITEMS.map((item) => (
-            <NavLink key={item.path} to={item.path} end={item.path === "/"} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title={item.label}>
-              <item.icon size={20} className="nav-icon" />
-              <span className="nav-label">{item.label}</span>
-            </NavLink>
+          {NAV_SECTIONS.map((section, i) => (
+            <div key={i} className="nav-section">
+              {section.map((item) => (
+                <NavLink key={item.path} to={item.path} end={item.path === "/"} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title={item.label}>
+                  <item.icon size={20} className="nav-icon" />
+                  <span className="nav-label">{item.label}</span>
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 

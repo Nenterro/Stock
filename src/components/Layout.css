@@ -173,6 +173,18 @@
   gap: 8px;
 }
 
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nav-section + .nav-section {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .nav-item {
   display: flex;
   align-items: center;
