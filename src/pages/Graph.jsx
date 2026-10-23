@@ -137,39 +137,6 @@ export default function Graph() {
     return sliced.length > 1 ? rebaseSeries(sliced) : rawTimeSeries;
   }, [rawTimeSeries, period]);
 
-  // Reactive summary for the selected period and metric
-  const periodSummary = useMemo(() => {
-    if (!filteredTimeSeries || filteredTimeSeries.length === 0) {
-      return { currentValue: 0, costBasis: 0, periodGain: 0, periodReturnPct: 0 };
-    }
-
-    const startPt = filteredTimeSeries[0];
-    const endPt = filteredTimeSeries[filteredTimeSeries.length - 1];
-    const currentValue = endPt.value;
-
-    let periodGain;
-    let periodReturnPct;
-
-    if (chartMode === 'value') {
-      // Change in market value over the window, net of money added or removed.
-      const netFlow = (endPt.costBasis - startPt.costBasis);
-      periodGain = endPt.value - startPt.value - netFlow;
-      const startVal = startPt.value > 0 ? startPt.value : (startPt.costBasis || 1);
-      periodReturnPct = (periodGain / startVal) * 100.0;
-    } else {
-      // Already re-based to the window by rebaseSeries.
-      periodReturnPct = endPt.mwrPct;
-      periodGain = endPt.pnl - startPt.pnl;
-    }
-
-    return {
-      currentValue,
-      costBasis: endPt.costBasis,
-      periodGain,
-      periodReturnPct
-    };
-  }, [filteredTimeSeries, chartMode]);
-
   // Currency Toggle Pill
   const renderCurrencyTogglePill = () => (
     <div className="segmented-control">
@@ -202,18 +169,13 @@ export default function Graph() {
             <span className="tooltip-val">{getCurrencySymbol(displayCurrency)}{formatCurrency(data.value)}</span>
           </div>
           <div className="tooltip-row">
-            <span className="tooltip-label">Invested</span>
-            <span className="tooltip-val">{getCurrencySymbol(displayCurrency)}{formatCurrency(data.costBasis)}</span>
+            <span className="tooltip-label">Net invested</span>
+            <span className="tooltip-val">{getCurrencySymbol(displayCurrency)}{formatCurrency(data.netInvested)}</span>
           </div>
           <div className="tooltip-row">
-            <span className="tooltip-label">Unrealised gain</span>
-            <span className="tooltip-val" style={{ color: data.unrealizedPnl >= 0 ? '#10b981' : '#ef4444' }}>
-              {data.unrealizedPnl >= 0 ? '+' : '−'}{getCurrencySymbol(displayCurrency)}{formatCurrency(Math.abs(data.unrealizedPnl || 0))}
-              {data.costBasis > 0 && (
-                <span style={{ opacity: 0.8, marginLeft: 6 }}>
-                  ({data.unrealizedPnl >= 0 ? '+' : ''}{((data.unrealizedPnl / data.costBasis) * 100).toFixed(1)}%)
-                </span>
-              )}
+            <span className="tooltip-label">Total gain</span>
+            <span className="tooltip-val" style={{ color: data.pnl >= 0 ? '#10b981' : '#ef4444' }}>
+              {data.pnl >= 0 ? '+' : '−'}{getCurrencySymbol(displayCurrency)}{formatCurrency(Math.abs(data.pnl || 0))}
             </span>
           </div>
           <div className="tooltip-row">
@@ -281,6 +243,7 @@ export default function Graph() {
   const totalPortfolioValue = endPoint ? endPoint.value : 0;
   const totalGainDollars = endPoint ? endPoint.pnl : 0;
   const allTimeMwr = endPoint ? endPoint.mwrPct : 0;
+  const allTimeAnnual = endPoint ? endPoint.mwrAnnualPct || 0 : 0;
   const sym = getCurrencySymbol(displayCurrency);
   const signed = (v) => `${v >= 0 ? '+' : '−'}${sym}${formatCurrency(Math.abs(v || 0))}`;
 
@@ -324,7 +287,7 @@ export default function Graph() {
   // its fill so the two can never disagree.
   const getGradientStops = (data, opacity = 1) => {
     if (!data || data.length === 0) return null;
-    const colorAt = (pt) => (pt.value >= pt.costBasis ? '#10b981' : '#ef4444');
+    const colorAt = (pt) => (pt.value >= pt.netInvested ? '#10b981' : '#ef4444');
     const stops = [];
     let lastColor = colorAt(data[0]);
 
@@ -352,7 +315,7 @@ export default function Graph() {
     if (!payload) return null;
     let isRed = false;
     if (chartMode === 'value') {
-      isRed = payload.value < payload.costBasis;
+      isRed = payload.value < payload.netInvested;
     } else {
       isRed = payload.mwrPct < 0;
     }
@@ -405,7 +368,7 @@ export default function Graph() {
           label: period === 'All Time' ? 'all time' : period === 'YTD' ? 'this year' : `past ${period}`
         }}
         stats={[
-          { label: 'Invested', value: `${sym}${formatCurrency(endPoint?.costBasis || 0)}`, sub: 'cost of current holdings' },
+          { label: 'Net invested', value: `${sym}${formatCurrency(endPoint?.netInvested || 0)}`, sub: 'put in, minus taken out' },
           {
             label: 'Total gain',
             value: signed(totalGainDollars),
@@ -419,6 +382,12 @@ export default function Graph() {
             sub: chartMode === 'gain' ? 'shown in the chart' : 'click to chart it',
             onClick: () => setChartMode(chartMode === 'gain' ? 'value' : 'gain'),
             active: chartMode === 'gain'
+          },
+          {
+            label: 'Annualised',
+            value: `${allTimeAnnual >= 0 ? '+' : ''}${allTimeAnnual.toFixed(2)}%`,
+            tone: allTimeAnnual,
+            sub: 'MWR per year'
           }
         ]}
       />
@@ -555,7 +524,7 @@ export default function Graph() {
                     />
                     <Area
                       type="monotone"
-                      dataKey={(d) => (d.value >= d.costBasis ? [d.costBasis, d.value] : null)}
+                      dataKey={(d) => (d.value >= d.netInvested ? [d.netInvested, d.value] : null)}
                       stroke="none"
                       fill="#10b981"
                       fillOpacity={0.18}
@@ -565,7 +534,7 @@ export default function Graph() {
                     />
                     <Area
                       type="monotone"
-                      dataKey={(d) => (d.value < d.costBasis ? [d.value, d.costBasis] : null)}
+                      dataKey={(d) => (d.value < d.netInvested ? [d.value, d.netInvested] : null)}
                       stroke="none"
                       fill="#ef4444"
                       fillOpacity={0.2}
@@ -597,7 +566,7 @@ export default function Graph() {
                 {chartMode === 'value' && (
                   <Line
                     type="stepAfter"
-                    dataKey="costBasis"
+                    dataKey="netInvested"
                     stroke="rgba(255, 255, 255, 0.35)"
                     strokeWidth={1.5}
                     strokeDasharray="4 4"

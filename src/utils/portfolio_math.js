@@ -465,6 +465,10 @@ export function generatePortfolioTimeSeries(
   const heldShares = {};      // ticker -> share count
   const costDisplay = {};     // ticker -> book cost in display currency
   let realizedPnl = 0;
+  // Money in (buys, taxes) minus money out (sales, dividends): what the
+  // portfolio has cost on net. Value minus this is exactly the total P&L, so
+  // the two lines cross where MWR changes sign.
+  let netInvested = 0;
   let cumulativeTwr = 1.0;
   let prevValue = 0;
   let txIndex = 0;
@@ -500,6 +504,7 @@ export function generatePortfolioTimeSeries(
         heldShares[tx.ticker] = (heldShares[tx.ticker] || 0) + tx.shares;
         costDisplay[tx.ticker] = (costDisplay[tx.ticker] || 0) + amount;
         externalFlow += amount;
+        netInvested += amount;
         mwrFlows.push({ date: tx.dayStr, amount });
       } else if (tx.type === 'sell') {
         const held = heldShares[tx.ticker] || 0;
@@ -514,15 +519,18 @@ export function generatePortfolioTimeSeries(
         }
         realizedPnl += amount - costRemoved;
         externalFlow -= amount;
+        netInvested -= amount;
         mwrFlows.push({ date: tx.dayStr, amount: -amount });
       } else if (tx.type === 'dividend') {
         // Income taken out of the portfolio; it is a return, not a cost change.
         realizedPnl += amount;
         externalFlow -= amount;
+        netInvested -= amount;
         mwrFlows.push({ date: tx.dayStr, amount: -amount });
       } else if (tx.type === 'tax') {
         realizedPnl -= amount;
         externalFlow += amount;
+        netInvested += amount;
         mwrFlows.push({ date: tx.dayStr, amount });
       }
     }
@@ -563,11 +571,13 @@ export function generatePortfolioTimeSeries(
 
     // --- 4. Money-weighted return -----------------------------------------
     let mwrPct = 0;
+    let mwrAnnualPct = 0;
     if (mwrFlows.length > 0 && marketValue > 0) {
       const flows = mwrFlows.concat([{ date: dayStr, amount: -marketValue }]);
       const result = calculateXIRR(flows, mwrWarmStart);
       if (result.growth > 0) mwrWarmStart = result.growth;
       mwrPct = result.cumulative;
+      mwrAnnualPct = result.annualized;
     }
 
     series.push({
@@ -575,12 +585,14 @@ export function generatePortfolioTimeSeries(
       dateFormatted: dateFormatter.format(new Date(ms)),
       value: marketValue,
       costBasis,
+      netInvested,
       unrealizedPnl: marketValue - costBasis,
       realizedPnl,
       pnl: marketValue - costBasis + realizedPnl,
       twrFactor: cumulativeTwr,
       twrPct: (cumulativeTwr - 1) * 100,
-      mwrPct
+      mwrPct,
+      mwrAnnualPct
     });
   }
 

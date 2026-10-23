@@ -63,7 +63,7 @@ export default function Portfolio() {
   }, [transactions, filterState]);
 
   // Aggregate positions (Holdings & Closed Positions) with historical FX conversion & amount filters
-  const { holdingsList, closedList, totalMarketValue, totalUnrealizedPnL, totalRealizedPnL, totalDayChange, totalInvested, totalIncome } = useMemo(() => {
+  const { holdingsList, closedList, totalMarketValue, totalUnrealizedPnL, totalRealizedPnL, totalDayChange, totalIncome } = useMemo(() => {
     const positionMap = {};
     const currentFxRate = exchangeRates?.PKR || 278.0;
     let totIncome = 0;
@@ -123,7 +123,6 @@ export default function Portfolio() {
     let totUnrealized = 0;
     let totRealized = 0;
     let totDayChange = 0;
-    let totInvested = 0;
 
     const minVal = filterState.minAmount ? parseFloat(filterState.minAmount) : null;
     const maxVal = filterState.maxAmount ? parseFloat(filterState.maxAmount) : null;
@@ -177,7 +176,6 @@ export default function Portfolio() {
         if (passFilter) {
           totMarketVal += marketValue;
           totUnrealized += unrealizedPnL;
-          totInvested += costBasis;
           // Today's move in value: what the position was worth before the
           // quote's change. FX moves within the day are not included.
           if (change24hPercent > -100) totDayChange += marketValue - marketValue / (1 + change24hPercent / 100);
@@ -249,20 +247,20 @@ export default function Portfolio() {
       totalUnrealizedPnL: totUnrealized,
       totalRealizedPnL: totRealized,
       totalDayChange: totDayChange,
-      totalInvested: totInvested,
       totalIncome: totIncome
     };
   }, [filteredTransactions, livePrices, exchangeRates, displayCurrency, filterState]);
 
     // From the same daily series the Graph page draws, so the two pages always
     // report identical returns.
-    const { mwrPercent, sparkline } = useMemo(() => {
+    const { mwrPercent, mwrAnnual, sparkline } = useMemo(() => {
       const currentFxRate = exchangeRates?.PKR || 278.0;
       const series = generatePortfolioTimeSeries(
         filteredTransactions, livePrices, historicalPrices, displayCurrency, currentFxRate, fxSeries
       );
       return {
         mwrPercent: series.length ? series[series.length - 1].mwrPct : 0,
+        mwrAnnual: series.length ? series[series.length - 1].mwrAnnualPct || 0 : 0,
         sparkline: series.slice(-30).map((pt) => pt.value)
       };
     }, [filteredTransactions, displayCurrency, exchangeRates, livePrices, historicalPrices, fxSeries]);
@@ -431,14 +429,16 @@ export default function Portfolio() {
           change={{ amount: totalDayChange, text: signed(totalDayChange), pct: dayPct, label: 'today' }}
           sparkline={sparkline}
           stats={[
-            { label: 'Invested', value: `${sym}${formatCurrency(totalInvested)}`, sub: 'cost of current holdings' },
+            // Net of everything taken back out, so value - this = total gain.
+            { label: 'Net invested', value: `${sym}${formatCurrency(totalMarketValue - totalGain)}`, sub: 'put in, minus taken out' },
             {
               label: 'Total gain',
               value: signed(totalGain),
               tone: totalGain,
               sub: `${signed(totalUnrealizedPnL)} unrealised · ${signed(totalRealizedPnL + totalIncome)} realised & income`
             },
-            { label: 'Return (MWR)', value: `${mwrPercent >= 0 ? '+' : ''}${mwrPercent.toFixed(2)}%`, tone: mwrPercent, sub: 'on the money you put in' }
+            { label: 'Return (MWR)', value: `${mwrPercent >= 0 ? '+' : ''}${mwrPercent.toFixed(2)}%`, tone: mwrPercent, sub: 'on the money you put in' },
+            { label: 'Annualised', value: `${mwrAnnual >= 0 ? '+' : ''}${mwrAnnual.toFixed(2)}%`, tone: mwrAnnual, sub: 'MWR per year' }
           ]}
         />
 
