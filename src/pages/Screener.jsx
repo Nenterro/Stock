@@ -28,6 +28,7 @@ const COUNTRIES = ['United States', 'United Kingdom', 'Japan', 'Hong Kong', 'Can
 
 // Ratio inputs are entered as percentages and sent as fractions.
 const PERCENT_FIELDS = ['min_epsGrowth', 'min_dividendYield'];
+const MARKETS = ['PSX', 'International', 'All'];
 
 export default function Screener() {
   const { research, saveResearch } = useData();
@@ -38,32 +39,47 @@ export default function Screener() {
   const [loading, setLoading] = useState(false);
   const watched = new Set(research.filter((r) => r.kind === 'watch').map((r) => r.symbol));
 
+  const [counts, setCounts] = useState({});
+
   useEffect(() => {
     let live = true;
-    const t = setTimeout(() => {
-      setLoading(true);
+    const paramsFor = (market) => {
       const params = { sort, limit: 300 };
       // Grade C stocks lack the data to be ranked; hidden unless asked for.
       if (!f.includeC) params.dataGrade = 'A,B';
-      if (f.market === 'PSX') params.scope = 'psx';
-      if (f.market === 'International') params.scope = 'global';
+      if (market === 'PSX') params.scope = 'psx';
+      if (market === 'International') params.scope = 'global';
       // Only PSX stocks carry a Shariah flag; international screening is done
       // case by case with Claude, so the filter applies to PSX only.
-      if (f.shariah && f.market === 'PSX') params.shariah = true;
-      if (f.country && f.market !== 'PSX') params.country = f.country;
+      if (f.shariah && market === 'PSX') params.shariah = true;
+      if (f.country && market !== 'PSX') params.country = f.country;
       if (f.max_peTTM) {
         params.max_peTTM = f.max_peTTM;
         params.min_peTTM = 0.01; // a negative P/E is a loss, not a bargain
       }
-      for (const k of PERCENT_FIELDS) if (f[k] !== '') params[k] = Number(f[k]) / 100;
+      // EPS growth exists for PSX rows only (international rows carry
+      // earningsGrowth, which the backend can't filter yet); applying it
+      // elsewhere would quietly drop every international stock.
+      for (const k of PERCENT_FIELDS) {
+        if (f[k] === '' || (k === 'min_epsGrowth' && market !== 'PSX')) continue;
+        params[k] = Number(f[k]) / 100;
+      }
       if (f.sector) params.sector = f.sector;
-      if (f.trend) params.trend = f.trend;
+      if (f.trend && market === 'PSX') params.trend = f.trend;
       // Liquidity: PKR millions a day on PSX, USD millions elsewhere.
-      if (f.min_liquidity && f.market !== 'All') params.min_avgValueTraded20d = Number(f.min_liquidity) * 1e6;
+      if (f.min_liquidity && market !== 'All') params.min_avgValueTraded20d = Number(f.min_liquidity) * 1e6;
       if (f.q) params.q = f.q;
-      fetchScreener(params)
+      return params;
+    };
+    const t = setTimeout(() => {
+      setLoading(true);
+      fetchScreener(paramsFor(f.market))
         .then((d) => live && setData(d))
         .finally(() => live && setLoading(false));
+      // How many each market would show with the same filters, for the switch.
+      Promise.all(MARKETS.map((m) => (m === f.market ? null : fetchScreener({ ...paramsFor(m), limit: 1 }).catch(() => null)))).then(
+        (res) => live && setCounts(Object.fromEntries(MARKETS.map((m, i) => [m, res[i]?.total])))
+      );
     }, 250);
     return () => {
       live = false;
@@ -92,11 +108,22 @@ export default function Screener() {
             {data?.builtAt ? ` · last built ${new Date(data.builtAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
           </p>
         </div>
-        <Segmented label="Market" options={['PSX', 'International', 'All']} value={f.market} onChange={(m) => setF({ ...f, market: m })} />
       </div>
 
       <Panel>
         <div className="rs-filters">
+          <div className="rs-field">
+            <label>Market</label>
+            <Segmented
+              label="Market"
+              options={MARKETS.map((m) => {
+                const n = m === f.market ? data?.total : counts[m];
+                return { value: m, label: n != null ? `${m} · ${n.toLocaleString('en-US')}` : m };
+              })}
+              value={f.market}
+              onChange={(m) => setF({ ...f, market: m })}
+            />
+          </div>
           <div className="rs-field">
             <label htmlFor="sc-q">Search</label>
             <input id="sc-q" className="rs-input" value={f.q} onChange={set('q')} placeholder="Symbol or name" style={{ width: 150 }} />
@@ -105,10 +132,12 @@ export default function Screener() {
             <label htmlFor="sc-pe">Max P/E</label>
             <input id="sc-pe" className="rs-input" type="number" value={f.max_peTTM} onChange={set('max_peTTM')} style={{ width: 80 }} />
           </div>
-          <div className="rs-field">
-            <label htmlFor="sc-eg">Min EPS growth %</label>
-            <input id="sc-eg" className="rs-input" type="number" value={f.min_epsGrowth} onChange={set('min_epsGrowth')} style={{ width: 90 }} />
-          </div>
+          {f.market === 'PSX' && (
+            <div className="rs-field">
+              <label htmlFor="sc-eg">Min EPS growth %</label>
+              <input id="sc-eg" className="rs-input" type="number" value={f.min_epsGrowth} onChange={set('min_epsGrowth')} style={{ width: 90 }} />
+            </div>
+          )}
           {f.market !== 'PSX' && (
             <div className="rs-field">
               <label htmlFor="sc-dy">Min yield %</label>
@@ -208,18 +237,20 @@ export default function Screener() {
                       )}
                     </td>
                     <td className={`num ${toneOf(r.upside)}`} title={r.fairValue ? `fair value ${fmtMoney(r.fairValue, r.currency)}; implied return ${fmtPct(r.impliedReturn)}` : ''}>
-                      {r.upside == null ? '—' : fmtPct(Math.max(-0.95, Math.min(r.upside, 9.99)), { signed: true, digits: 0 })}
+                      {r.upside == null ? <Why text={r.epsTTM != null && r.epsTTM <= 0 ? 'No valuation: the company has no positive earnings' : 'No valuation yet: missing an input'} /> : fmtPct(Math.max(-0.95, Math.min(r.upside, 9.99)), { signed: true, digits: 0 })}
                     </td>
                     <td className="num">{fmtMoney(r.price, r.currency)}</td>
                     <td className="num">{fmtBig(r.marketCapUsd)}</td>
-                    <td className="num">{fmtNum(r.peTTM, 1)}</td>
+                    <td className="num">
+                      {r.peTTM != null ? fmtNum(r.peTTM, 1) : r.epsTTM != null && r.epsTTM <= 0 ? <span className="rs-muted" title="Loss-making: no P/E">loss</span> : <Why text="No earnings figure from the sources" />}
+                    </td>
                     {f.market === 'PSX' ? (
-                      <td className={`num ${toneOf(r.epsGrowth)}`}>{fmtPct(r.epsGrowth, { signed: true, digits: 0 })}</td>
+                      <td className={`num ${toneOf(r.epsGrowth)}`}>{r.epsGrowth == null ? <Why text="Needs two years of earnings" /> : fmtPct(r.epsGrowth, { signed: true, digits: 0 })}</td>
                     ) : (
                       <td className="num">{fmtPct(r.dividendYield, { digits: 2 })}</td>
                     )}
-                    {f.market === 'PSX' && <td className="num">{fmtPct(r.netMargin, { digits: 0 })}</td>}
-                    <td className={`num ${toneOf(r.return1y)}`}>{fmtPct(r.return1y, { signed: true, digits: 0 })}</td>
+                    {f.market === 'PSX' && <td className="num">{r.netMargin == null ? <Why text="No revenue or profit figure from the sources" /> : fmtPct(r.netMargin, { digits: 0 })}</td>}
+                    <td className={`num ${toneOf(r.return1y)}`}>{r.return1y == null ? <Why text="Less than a year of prices" /> : fmtPct(r.return1y, { signed: true, digits: 0 })}</td>
                     <td className="num">{fmtPct(r.fromHigh52, { digits: 0 })}</td>
                     {f.market === 'PSX' && <td className="num">{fmtNum(r.rsi14, 0)}</td>}
                     <td>
@@ -255,5 +286,14 @@ export default function Screener() {
         )}
       </Panel>
     </div>
+  );
+}
+
+/** An empty cell that says why it's empty, on hover. */
+function Why({ text }) {
+  return (
+    <span className="rs-muted" title={text} style={{ cursor: 'help', borderBottom: '1px dotted currentColor' }}>
+      n/a
+    </span>
   );
 }
