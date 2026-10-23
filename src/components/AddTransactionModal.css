@@ -68,7 +68,7 @@
 /* Type Selector */
 .tx-type-selector {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   background: rgba(0, 0, 0, 0.3);
   border-radius: 12px;
   padding: 4px;

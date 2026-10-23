@@ -15,11 +15,13 @@ import * as db from '../store/db';
 import './AddTransactionModal.css';
 import { displayTicker } from '../utils/format';
 
-// Trades only. Dividends and taxes were removed deliberately: the importers no
-// longer bring cash events in either, so the tracker records buys and sells.
+// Dividends and withholding tax count towards performance: entered here for
+// PSX (no broker feed), imported from the Flex statement for IBKR.
 const TX_TYPES = [
   { id: 'BUY', label: 'Buy', icon: ArrowDown, color: '#EF5350', bg: 'rgba(239, 83, 80, 0.15)' },
   { id: 'SELL', label: 'Sell', icon: ArrowUp, color: '#81C784', bg: 'rgba(129, 199, 132, 0.15)' },
+  { id: 'DIVIDEND', label: 'Dividend', icon: Wallet, color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' },
+  { id: 'TAX', label: 'Tax', icon: Tag, color: '#fab219', bg: 'rgba(250, 178, 25, 0.15)' },
 ];
 
 const slideVariants = {
@@ -432,9 +434,13 @@ export default function AddTransactionModal({ isOpen, onClose, initialData = nul
                       <label>Amount</label>
                       {renderMobileInput('amount', 'Amount', renderCurrencyIcon, amount, setAmount, '0.0')}
                       <span className="hint">
-                        {(type === 'WITHDRAW' || type === 'TAX') 
-                          ? "Enter absolute amount — recorded as a deduction."
-                          : "Enter the amount received."}
+                        {type === 'TAX'
+                          ? "Withholding on a dividend (PSX filer: 15% of the gross). Recorded as a deduction."
+                          : type === 'WITHDRAW'
+                            ? "Enter absolute amount — recorded as a deduction."
+                            : type === 'DIVIDEND'
+                              ? "Gross dividend before tax. Add the withholding as a separate Tax entry."
+                              : "Enter the amount received."}
                       </span>
                     </div>
                   </div>

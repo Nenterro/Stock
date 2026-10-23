@@ -69,6 +69,9 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
   let headers = {};
 
   let tradeCount = 0;
+  // Dividends and withholding, netted per symbol, pay date and kind: IBKR
+  // posts corrections as a reversal plus a re-booking on the same day.
+  const cashEvents = new Map();
   let depositCount = 0;
   let withdrawalCount = 0;
   let dividendCount = 0;
@@ -163,9 +166,6 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
       }
 
       // 2. Cash Transactions section (Dividends, Taxes, Deposits, Withdrawals)
-      //
-      // Counted but never imported: this tracker records trades only, so cash
-      // events are tallied for the summary line and then discarded.
       else if (inCash) {
         const rawType = getField(cells, headers, 'Type');
         if (!rawType || rawType === 'Type' || rawType.startsWith('Total')) continue;
@@ -192,12 +192,17 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
 
         if (!txType) continue;
 
-        // Tallied for the summary line, then dropped: this tracker records
-        // trades only, so dividends, taxes and cash transfers are not imported.
-        if (txType === 'DEPOSIT') depositCount++;
-        else if (txType === 'WITHDRAWAL') withdrawalCount++;
-        else if (txType === 'DIVIDEND') dividendCount++;
-        else if (txType === 'TAX') taxCount++;
+        // Cash transfers aren't tracked: the portfolio is measured by its
+        // positions, so only the income they earn (and its tax) is imported.
+        if (txType === 'DEPOSIT') { depositCount++; continue; }
+        if (txType === 'WITHDRAWAL') { withdrawalCount++; continue; }
+        if (!symbol) continue;
+
+        const currency = (getField(cells, headers, 'Currency') || 'USD').toUpperCase();
+        const key = `${symbol.toUpperCase()}|${formattedDate}|${txType}|${currency}`;
+        const ev = cashEvents.get(key) || { ticker: symbol.toUpperCase(), type: txType, date: formattedDate, currency, amount: 0 };
+        ev.amount += amount;
+        cashEvents.set(key, ev);
         continue;
       }
     } catch (e) {
@@ -205,7 +210,31 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
     }
   }
 
-  onLog(`Found: ${tradeCount} Trades. Skipped ${dividendCount} Dividends, ${taxCount} Taxes, ${depositCount + withdrawalCount} Cash Transfers (trades only).`);
+  for (const ev of cashEvents.values()) {
+    // A fully reversed payment nets to zero and is nothing to record.
+    if (Math.abs(ev.amount) < 0.005) continue;
+    const isDividend = ev.type === 'DIVIDEND';
+    const magnitude = Math.round(Math.abs(ev.amount) * 100) / 100;
+    if (isDividend) dividendCount++;
+    else taxCount++;
+    txs.push({
+      id: `ibkr_${ev.type.toLowerCase()}_${ev.ticker}_${ev.date}_${magnitude.toFixed(2)}`,
+      source: 'IBKR',
+      ticker: ev.ticker,
+      type: ev.type,
+      shares: 0,
+      price: 0,
+      fees: 0,
+      // Same convention as the entry form: dividends positive, tax negative.
+      amount: isDividend ? magnitude : -magnitude,
+      currency: ev.currency,
+      exchangeRate: 1.0,
+      date: ev.date,
+      note: `Imported from IBKR (${isDividend ? 'dividend' : 'withholding tax'})`
+    });
+  }
+
+  onLog(`Found: ${tradeCount} Trades, ${dividendCount} Dividends, ${taxCount} Taxes. Skipped ${depositCount + withdrawalCount} Cash Transfers.`);
   return txs;
 }
 
