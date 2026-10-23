@@ -97,12 +97,8 @@
   gap: 16px;
 }
 
-.form-grid.three-col {
-  grid-template-columns: 2fr 1fr 1fr;
-}
-
 @media (max-width: 768px) {
-  .form-grid, .form-grid.three-col {
+  .form-grid {
     grid-template-columns: 1fr;
   }
 }

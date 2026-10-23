@@ -24,7 +24,6 @@ export default function IbkrImport() {
   const [tab, setTab] = useState('flex'); // 'flex' | 'csv'
   const [token, setToken] = useState('');
   const [queryId, setQueryId] = useState('');
-  const [todayQueryId, setTodayQueryId] = useState('');
   const [showToken, setShowToken] = useState(false);
   const [rememberCreds, setRememberCreds] = useState(true);
 
@@ -57,14 +56,11 @@ export default function IbkrImport() {
         if (saved) {
           if (saved.token) setToken(saved.token);
           if (saved.queryId) setQueryId(saved.queryId);
-          if (saved.todayQueryId) setTodayQueryId(saved.todayQueryId);
         } else {
           const lsToken = localStorage.getItem('ibkr_flex_token');
           const lsQuery = localStorage.getItem('ibkr_flex_query_id');
-          const lsToday = localStorage.getItem('ibkr_flex_today_query_id');
           if (lsToken) setToken(lsToken);
           if (lsQuery) setQueryId(lsQuery);
-          if (lsToday) setTodayQueryId(lsToday);
         }
         
         if (settings?.config?.assetMappings) {
@@ -133,10 +129,9 @@ export default function IbkrImport() {
       try {
         localStorage.setItem('ibkr_flex_token', token.trim());
         localStorage.setItem('ibkr_flex_query_id', queryId.trim());
-        localStorage.setItem('ibkr_flex_today_query_id', todayQueryId.trim());
         const settings = await db.settingsStore.getItem('stocksettings123') || { id: 'stocksettings123' };
         settings.config = settings.config || {};
-        settings.config.ibkrCredentials = { token: token.trim(), queryId: queryId.trim(), todayQueryId: todayQueryId.trim() };
+        settings.config.ibkrCredentials = { token: token.trim(), queryId: queryId.trim() };
         settings.pendingSync = true;
         await db.settingsStore.setItem('stocksettings123', settings);
       } catch (e) {}
@@ -150,7 +145,7 @@ export default function IbkrImport() {
 
     try {
       addLog('Starting IBKR Flex Web Service Sync...');
-      const results = await syncIbkrFlexService({ token, queryId, todayQueryId }, addLog);
+      const results = await syncIbkrFlexService({ token, queryId }, addLog);
 
       if (!results || results.length === 0) {
         throw new Error('No transactions returned or query returned 0 rows.');
@@ -382,7 +377,7 @@ export default function IbkrImport() {
             {/* Panel 1: Flex Query Automated Sync */}
             {(status === 'idle' || status === 'syncing') && tab === 'flex' && (
               <div className="ibkr-panel">
-                <div className="form-grid three-col">
+                <div className="form-grid">
                   <div className="input-field">
                     <label>
                       <span>Flex Query Token</span>
@@ -420,21 +415,6 @@ export default function IbkrImport() {
                       />
                     </div>
                   </div>
-
-                  <div className="input-field">
-                    <label>
-                      <span>Today&apos;s Trades Query ID</span>
-                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Optional · Trade Confirmation query</span>
-                    </label>
-                    <div className="input-wrapper">
-                      <input 
-                        type="text" 
-                        placeholder="e.g. 987655"
-                        value={todayQueryId}
-                        onChange={(e) => setTodayQueryId(e.target.value)}
-                      />
-                    </div>
-                  </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -461,7 +441,6 @@ export default function IbkrImport() {
                     <li>Under <strong>Custom Flex Queries</strong>, create a new Trade & Cash Query with <strong>Trades (TRNT)</strong> and <strong>Cash Transactions (CTRN)</strong>.</li>
                     <li>Under <strong>Flex Web Service</strong>, check <em>Enable Flex Web Service</em> to generate your private <strong>Flex Token</strong>.</li>
                     <li>Copy your <strong>Token</strong> and <strong>Query ID</strong> and paste them above.</li>
-                    <li>Activity queries only cover up to yesterday. For today&apos;s trades, also create a <strong>Trade Confirmation Flex Query</strong> (Format <strong>CSV</strong>, Period <strong>Today</strong>) and paste its ID into <em>Today&apos;s Trades Query ID</em>. Same token.</li>
                   </ol>
                 </div>
 
