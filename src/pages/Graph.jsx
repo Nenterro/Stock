@@ -5,6 +5,7 @@ import { NavLink } from 'react-router-dom';
 import { Home, TrendingUp, TrendingDown, RefreshCcw, DollarSign, Percent, Filter, GitCompare, ChevronDown, Maximize2, Minimize2, Smartphone, RotateCcw } from 'lucide-react';
 import { formatCurrency, getCurrencySymbol } from '../utils/format';
 import { generatePortfolioTimeSeries, rebaseSeries } from '../utils/portfolio_math';
+import { computePositions } from '../utils/portfolio_analytics';
 import BackendStatusDot from '../components/BackendStatusDot';
 import PortfolioHero from '../components/PortfolioHero';
 import FilterModal from '../components/FilterModal';
@@ -247,13 +248,14 @@ export default function Graph() {
   const sym = getCurrencySymbol(displayCurrency);
   const signed = (v) => `${v >= 0 ? '+' : '−'}${sym}${formatCurrency(Math.abs(v || 0))}`;
 
-  // Change over the selected window: P&L earned in it and its MWR.
-  const periodChange = filteredTimeSeries.length > 1
-    ? {
-        gain: filteredTimeSeries[filteredTimeSeries.length - 1].pnl - (period === 'All Time' ? 0 : filteredTimeSeries[0].pnl),
-        mwr: filteredTimeSeries[filteredTimeSeries.length - 1].mwrPct
-      }
-    : null;
+  // Today's move, worked out exactly as on Portfolio and Home: each holding's
+  // value change from its quote's daily change.
+  const dayChange = useMemo(() => {
+    const p = computePositions(filteredTransactions, livePrices, { displayCurrency, fxRate: currentFxRate, fxSeries });
+    const amount = p.holdings.reduce((a, h) => (h.dayChangePct != null && h.dayChangePct > -1 ? a + (h.marketValue - h.marketValue / (1 + h.dayChangePct)) : a), 0);
+    const before = p.totals.marketValue - amount;
+    return { amount, pct: before > 0 ? (amount / before) * 100 : null };
+  }, [filteredTransactions, livePrices, displayCurrency, currentFxRate, fxSeries]);
 
   // Axis labels: $4k / Rs 1.1M rather than 4,000.00; dates by the window's length.
   const compactMoney = (v) => {
@@ -358,15 +360,10 @@ export default function Graph() {
         </div>
       </div>
 
-      {/* 1. Value card, shared with Portfolio. The chip follows the selected period. */}
+      {/* 1. Value card, shared with Portfolio. */}
       <PortfolioHero
         value={`${sym}${formatCurrency(totalPortfolioValue)}`}
-        change={periodChange && {
-          amount: periodChange.gain,
-          text: signed(periodChange.gain),
-          pct: periodChange.mwr,
-          label: period === 'All Time' ? 'all time' : period === 'YTD' ? 'this year' : `past ${period}`
-        }}
+        change={{ amount: dayChange.amount, text: signed(dayChange.amount), pct: dayChange.pct, label: 'today' }}
         stats={[
           [
             { label: 'Net invested', value: `${sym}${formatCurrency(endPoint?.netInvested || 0)}`, sub: 'put in, minus taken out' },
