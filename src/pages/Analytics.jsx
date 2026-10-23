@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { useData } from '../context/DataContext';
 import { useAppearanceSettings } from '../context/SettingsContext';
 import { useMarketResearch } from '../hooks/useMarketResearch';
@@ -83,6 +83,23 @@ export default function Analytics() {
     () => (transactions?.length ? currencySplit(transactions, livePrices, historicalPrices, { fxRate, fxSeries, since }) : null),
     [transactions, livePrices, historicalPrices, fxRate, fxSeries, since]
   );
+
+  // Distance below the running peak over the trailing year, on the
+  // time-weighted index so deposits and withdrawals don't read as moves.
+  const drawdown = useMemo(() => {
+    if (!series.length) return [];
+    const end = series[series.length - 1].date;
+    const from = new Date(Date.parse(`${end}T00:00:00Z`) - 365 * 86400000).toISOString().slice(0, 10);
+    const pts = series.filter((p) => p.date >= from && p.twrFactor > 0);
+    let peak = 0;
+    const step = Math.max(1, Math.floor(pts.length / 180));
+    return pts
+      .map((p) => {
+        peak = Math.max(peak, p.twrFactor);
+        return { date: p.date, dd: p.twrFactor / peak - 1 };
+      })
+      .filter((_, i, a) => i % step === 0 || i === a.length - 1);
+  }, [series]);
 
   // Portfolio TWR vs benchmarks, each rebased to 100 at the window start and
   // valued in the display currency at historical FX.
@@ -393,8 +410,9 @@ export default function Analytics() {
       </div>
 
       <div className="rs-grid-2">
-        <Panel title="Risk" subtitle={x?.risk?.oneYear ? `Trailing year to ${x.risk.oneYear.to}; risk-free rate ${fmtPct(x.risk.oneYear.riskFreeRate)}` : null}>
+        <Panel className="rs-panel-fill" title="Risk" subtitle={x?.risk?.oneYear ? `Trailing year to ${x.risk.oneYear.to}; risk-free rate ${fmtPct(x.risk.oneYear.riskFreeRate)}` : null}>
           {r1 ? (
+            <>
             <div className="rs-kv rs-kv-3">
               <div><dt>Volatility</dt><dd>{fmtPct(r1.volatility)}</dd></div>
               <div><dt>Max drawdown</dt><dd>{fmtPct(r1.maxDrawdown)}</dd></div>
@@ -403,6 +421,31 @@ export default function Analytics() {
               <div><dt>Best day</dt><dd className="rs-gain">{fmtPct(r1.bestDay?.r, { signed: true })}</dd></div>
               <div><dt>Worst day</dt><dd className="rs-loss">{fmtPct(r1.worstDay?.r, { signed: true })}</dd></div>
             </div>
+            {drawdown.length > 1 && (
+              <div className="rs-fill">
+                <div className="rs-mix-label" style={{ marginTop: 18 }}>Below the previous peak, last year</div>
+                <div className="rs-fill-chart" role="img" aria-label={`Drawdown over the last year, deepest ${fmtPct(r1.maxDrawdown)}`}>
+                  <ResponsiveContainer>
+                    <AreaChart data={drawdown} margin={{ top: 4, right: 4, bottom: 0, left: -8 }}>
+                      <defs>
+                        <linearGradient id="ddFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--loss)" stopOpacity={0.05} />
+                          <stop offset="100%" stopColor="var(--loss)" stopOpacity={0.35} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+                      <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={48}
+                        tickFormatter={(d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} width={44} domain={['dataMin', 0]}
+                        tickFormatter={(v) => `${Math.round(v * 100)}%`} />
+                      <Tooltip content={<ChartTooltip formatter={(v) => fmtPct(v)} />} cursor={{ stroke: 'rgba(255,255,255,0.2)' }} />
+                      <Area type="monotone" dataKey="dd" name="Below peak" stroke="var(--loss)" strokeWidth={1.5} fill="url(#ddFill)" isAnimationActive={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+            </>
           ) : (
             <Empty>Not enough history yet for risk statistics.</Empty>
           )}

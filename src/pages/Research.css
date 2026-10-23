@@ -599,3 +599,8 @@
 
 /* Correlation heatmap: a holding against itself is blank grey. */
 .rs-heat-self { background: rgba(255, 255, 255, 0.06); }
+
+/* A panel whose last block stretches to the height its row gives it. */
+.rs-panel-fill { display: flex; flex-direction: column; }
+.rs-fill { flex: 1; display: flex; flex-direction: column; min-height: 150px; }
+.rs-fill-chart { flex: 1; min-height: 120px; }
