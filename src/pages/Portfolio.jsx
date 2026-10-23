@@ -10,9 +10,9 @@ import { formatCurrency, getCurrencySymbol, displayTicker } from '../utils/forma
 import { generatePortfolioTimeSeries } from '../utils/portfolio_math';
 import './Portfolio.css';
 
-/** Share counts without float noise: 1.5899999999 -> 1.59, 276 -> 276. */
+/** Share counts to at most 2 decimals: 25.5497 -> 25.55, 276 -> 276. */
 function fmtShares(n) {
-  return (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 4 });
+  return (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 function HeroStat({ label, value, sub, tone }) {
