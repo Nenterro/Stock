@@ -596,3 +596,6 @@
   border-bottom: 1px solid var(--panel-border);
 }
 .rs-contrib-head span { font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+
+/* Correlation heatmap: a holding against itself is blank grey. */
+.rs-heat-self { background: rgba(255, 255, 255, 0.06); }

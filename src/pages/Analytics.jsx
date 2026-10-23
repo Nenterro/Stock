@@ -490,16 +490,22 @@ function FragmentRow({ a, row, tickers }) {
   return (
     <>
       <span className="rs-heat-label">{displayTicker(a)}</span>
-      {row.map((v, j) => (
-        <span
-          key={tickers[j]}
-          className="rs-heat-cell"
-          style={{ background: divergingColor(v) }}
-          title={`${displayTicker(a)} vs ${displayTicker(tickers[j])}: ${v == null ? 'not enough shared trading days' : fmtNum(v)}`}
-        >
-          {v == null ? '' : tickers.length <= 12 ? fmtNum(v, 1) : ''}
-        </span>
-      ))}
+      {row.map((v, j) => {
+        // A holding against itself is always 1.0 and says nothing: leave it blank.
+        if (tickers[j] === a) {
+          return <span key={tickers[j]} className="rs-heat-cell rs-heat-self" aria-hidden="true" />;
+        }
+        return (
+          <span
+            key={tickers[j]}
+            className="rs-heat-cell"
+            style={{ background: divergingColor(v) }}
+            title={`${displayTicker(a)} vs ${displayTicker(tickers[j])}: ${v == null ? 'not enough shared trading days' : fmtNum(v)}`}
+          >
+            {v == null ? '' : tickers.length <= 12 ? fmtNum(v, 1) : ''}
+          </span>
+        );
+      })}
     </>
   );
 }
