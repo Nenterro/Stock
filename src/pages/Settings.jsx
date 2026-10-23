@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Shield, Briefcase, ChevronRight, LogOut, LogIn, RefreshCw, Upload, Download, Server, Mail } from 'lucide-react';
+import { Shield, Briefcase, ChevronRight, LogOut, LogIn, RefreshCw, Upload, Download, Server, Mail, Wallet } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Settings() {
@@ -48,6 +48,23 @@ export default function Settings() {
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <span style={{ fontSize: '16px', fontWeight: '500' }}>KTrade (KASB)</span>
                   <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Trade confirmations from email or PDF</span>
+                </div>
+              </div>
+              <ChevronRight size={20} style={{ color: 'var(--text-secondary)' }} />
+            </div>
+
+            <div
+              className="settings-item"
+              onClick={() => navigate('/settings/import/budget-dividends')}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', borderTop: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+                  <Wallet size={20} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '16px', fontWeight: '500' }}>Dividends from Budget</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>PSX dividends logged in the budget app</span>
                 </div>
               </div>
               <ChevronRight size={20} style={{ color: 'var(--text-secondary)' }} />

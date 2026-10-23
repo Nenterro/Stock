@@ -70,6 +70,33 @@ function getCurrentUserId() {
   return (pb.authStore.isValid && pb.authStore.model) ? pb.authStore.model.id : null;
 }
 
+/**
+ * The budget app's transactions, decrypted. Same server, account and PIN-derived
+ * key as this app, so they read like our own records. Read-only: nothing here
+ * ever writes to the budget app's collections.
+ */
+export async function fetchBudgetTransactions() {
+  await connectPocketBase();
+  const usersId = getCurrentUserId();
+  if (!usersId) throw new Error('Sign in to read the budget app.');
+  if (!isUnlocked()) throw new Error('Unlock the app with your PIN first.');
+
+  const records = await pb.collection('transactions').getFullList({ filter: `users = "${usersId}"`, sort: '-created' });
+  const out = [];
+  for (const r of records) {
+    if (!r.encrypted_payload) {
+      out.push(r);
+      continue;
+    }
+    try {
+      out.push({ ...(await decryptPayload(r.encrypted_payload)), id: r.id });
+    } catch (err) {
+      console.warn('Could not decrypt budget transaction', r.id, err);
+    }
+  }
+  return out;
+}
+
 // ─── Helper: check E2EE state from localforage ───
 async function getE2eeState() {
   const record = await db.settingsStore.getItem('stocksettings123');
