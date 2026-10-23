@@ -1,4 +1,5 @@
 import { fetchHistoricalFxRate, fetchTextFromBackend } from './api';
+import { transactionFingerprint } from './transactions';
 
 /**
  * Interactive Brokers (IBKR) Flex Query & Statement Parser
@@ -89,7 +90,8 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
     // Section boundary in IBKR Flex CSV reports
     if (cells[0] === 'BOS') {
       headers = {};
-      inTrades = cells[1] === 'TRNT' || cells[1] === 'Trades';
+      // TCNF: a Trade Confirmation query, which (unlike Activity) includes today.
+      inTrades = ['TRNT', 'Trades', 'TCNF', 'Trade Confirmations'].includes(cells[1]);
       inCash = cells[1] === 'CTRN' || cells[1] === 'Cash Transactions';
       continue;
     }
@@ -143,7 +145,9 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
         const settleDateRaw = getField(cells, headers, 'SettleDate');
         const settleDate = settleDateRaw ? parseIbkrDate(settleDateRaw) : null;
 
-        const type = qty > 0 ? 'BUY' : 'SELL';
+        // Trust the explicit side where the report has one; quantity sign otherwise.
+        const side = getField(cells, headers, 'Buy/Sell').toUpperCase();
+        const type = side.startsWith('SELL') ? 'SELL' : side.startsWith('BUY') ? 'BUY' : qty > 0 ? 'BUY' : 'SELL';
         const shares = Math.abs(qty);
         const amount = shares * price;
         const id = `ibkr_trade_${symbol}_${formattedDate}_${shares.toFixed(4)}_${type.toLowerCase()}`;
@@ -246,58 +250,31 @@ export async function stampHistoricalRates(transactions, onProgress = () => {}) 
 }
 
 /**
- * Automated IBKR Flex Web Service Sync
+ * Run one Flex query and return its CSV: request a reference code, then poll
+ * until IBKR has generated the statement.
  */
-export async function syncIbkrFlexService({ token, queryId }, onLog = () => {}) {
-  const trimmedToken = (token || '').trim();
-  const trimmedQueryId = (queryId || '').trim();
-
-  if (!trimmedToken || !trimmedQueryId) {
-    throw new Error('Please provide both your IBKR Flex Token and Query ID.');
+async function fetchFlexStatement(token, queryId, label, onLog) {
+  // IBKR doesn't allow browser requests (no CORS), so the home server relays
+  // them. The token never goes to a third-party proxy.
+  onLog(`Requesting ${label} from Interactive Brokers...`);
+  const responseText = await fetchTextFromBackend(`/api/ibkr/request?t=${encodeURIComponent(token)}&q=${encodeURIComponent(queryId)}`);
+  if (!responseText) {
+    throw new Error('Could not reach the home server to relay the request to IBKR.');
   }
 
-  onLog('--- Initiating IBKR Flex Web Service Connection ---');
-  
-  // Step 1: IBKR doesn't allow browser requests (no CORS), so the home
-  // server relays them. The token never goes to a third-party proxy.
-  let refCode = null;
-  onLog('Requesting statement generation from Interactive Brokers...');
-
-  try {
-    const responseText = await fetchTextFromBackend(`/api/ibkr/request?t=${encodeURIComponent(trimmedToken)}&q=${encodeURIComponent(trimmedQueryId)}`);
-
-    if (!responseText) {
-      throw new Error('Could not reach the home server to relay the request to IBKR.');
-    }
-
-    // Parse Reference Code XML
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(responseText, 'text/xml');
-    const status = xmlDoc.querySelector('Status')?.textContent;
-    
-    if (status === 'Success') {
-      refCode = xmlDoc.querySelector('ReferenceCode')?.textContent;
-      onLog(`✅ Statement reference code received: ${refCode}`);
-    } else {
-      const errorMsg = xmlDoc.querySelector('ErrorMessage')?.textContent || 'Invalid Flex Query parameters.';
-      throw new Error(errorMsg);
-    }
-  } catch (err) {
-    onLog(`❌ Connection Error: ${err.message}`);
-    throw err;
+  const xmlDoc = new DOMParser().parseFromString(responseText, 'text/xml');
+  if (xmlDoc.querySelector('Status')?.textContent !== 'Success') {
+    throw new Error(xmlDoc.querySelector('ErrorMessage')?.textContent || 'Invalid Flex Query parameters.');
   }
+  const refCode = xmlDoc.querySelector('ReferenceCode')?.textContent;
+  if (!refCode) throw new Error('No Reference Code returned by IBKR.');
+  onLog(`✅ Reference code received: ${refCode}`);
 
-  if (!refCode) {
-    throw new Error('No Reference Code returned by IBKR.');
-  }
-
-  // Step 2: Poll for statement generation
-  let csvReport = '';
   for (let attempt = 1; attempt <= 15; attempt++) {
     await new Promise(r => setTimeout(r, 4000));
-    onLog(`Polling statement readiness (Attempt ${attempt}/15)...`);
+    onLog(`Polling ${label} (Attempt ${attempt}/15)...`);
 
-    const bodyText = await fetchTextFromBackend(`/api/ibkr/statement?q=${encodeURIComponent(refCode)}&t=${encodeURIComponent(trimmedToken)}`);
+    const bodyText = await fetchTextFromBackend(`/api/ibkr/statement?q=${encodeURIComponent(refCode)}&t=${encodeURIComponent(token)}`);
     if (!bodyText) {
       onLog('Generating on IBKR servers...');
       continue;
@@ -308,28 +285,66 @@ export async function syncIbkrFlexService({ token, queryId }, onLog = () => {}) 
       const code = bodyText.match(/<ErrorCode>(\d+)<\/ErrorCode>/)?.[1];
       if (code === '1019' || bodyText.includes('<Status>Warn</Status>')) continue;
       const msg = bodyText.match(/<ErrorMessage>([^<]*)<\/ErrorMessage>/)?.[1] || 'IBKR returned an error.';
-      onLog(`❌ IBKR error ${code || ''}: ${msg}`);
-      throw new Error(msg);
+      throw new Error(`IBKR error ${code || ''}: ${msg}`.trim());
     }
 
     if (bodyText.trimStart().startsWith('<')) {
-      throw new Error('IBKR sent the statement as XML. In Client Portal, edit the Flex Query and set its Format to CSV, then try again.');
+      throw new Error(`IBKR sent the ${label} as XML. In Client Portal, edit that Flex Query and set its Format to CSV, then try again.`);
     }
 
-    csvReport = bodyText;
-    onLog(`✅ Statement downloaded successfully (${csvReport.length} bytes)!`);
-    break;
+    onLog(`✅ ${label} downloaded (${bodyText.length} bytes)`);
+    return bodyText;
   }
 
-  if (!csvReport) {
-    throw new Error('IBKR took too long to generate report. Please try again in 1-2 minutes.');
+  throw new Error(`IBKR took too long to generate the ${label}. Please try again in 1-2 minutes.`);
+}
+
+/**
+ * Automated IBKR Flex Web Service Sync.
+ *
+ * Activity queries are built overnight, so they stop at yesterday's close.
+ * An optional Trade Confirmation query (same token) fills in today's trades;
+ * a fill that appears in both is kept once, from the Activity statement.
+ */
+export async function syncIbkrFlexService({ token, queryId, todayQueryId }, onLog = () => {}) {
+  const trimmedToken = (token || '').trim();
+  const trimmedQueryId = (queryId || '').trim();
+  const trimmedTodayId = (todayQueryId || '').trim();
+
+  if (!trimmedToken || !trimmedQueryId) {
+    throw new Error('Please provide both your IBKR Flex Token and Query ID.');
   }
 
-  // Step 3: Parse CSV
-  onLog('Parsing transactions and cash events...');
-  const parsedTransactions = parseIbkrCsv(csvReport, onLog);
-  
-  // Step 4: Stamp historical rates
+  onLog('--- Initiating IBKR Flex Web Service Connection ---');
+
+  let parsedTransactions;
+  try {
+    const activity = await fetchFlexStatement(trimmedToken, trimmedQueryId, 'activity statement', onLog);
+    onLog('Parsing transactions and cash events...');
+    parsedTransactions = parseIbkrCsv(activity, onLog);
+  } catch (err) {
+    onLog(`❌ ${err.message}`);
+    throw err;
+  }
+
+  if (trimmedTodayId) {
+    try {
+      const confirms = await fetchFlexStatement(trimmedToken, trimmedTodayId, "today's trade confirmations", onLog);
+      const seen = new Set(parsedTransactions.map(transactionFingerprint));
+      const extra = parseIbkrCsv(confirms, onLog).filter(tx => {
+        const fp = transactionFingerprint(tx);
+        if (seen.has(fp)) return false;
+        seen.add(fp);
+        return true;
+      });
+      onLog(`✅ ${extra.length} trade(s) from today's confirmations not yet in the activity statement`);
+      parsedTransactions = [...parsedTransactions, ...extra];
+    } catch (err) {
+      // Today's trades are a bonus; don't lose the main import over them.
+      onLog(`⚠️ Skipped today's trades: ${err.message}`);
+    }
+  }
+
   const finalized = await stampHistoricalRates(parsedTransactions, onLog);
   onLog(`✅ Finished: ${finalized.length} total transaction(s) ready for import.`);
 
