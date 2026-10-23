@@ -57,7 +57,7 @@ export default function Portfolio() {
   }, [transactions, filterState]);
 
   // Aggregate positions (Holdings & Closed Positions) with historical FX conversion & amount filters
-  const { holdingsList, closedList, totalMarketValue, totalUnrealizedPnL, totalRealizedPnL } = useMemo(() => {
+  const { holdingsList, closedList, totalMarketValue, totalUnrealizedPnL, totalRealizedPnL, totalDayChange } = useMemo(() => {
     const positionMap = {};
     const currentFxRate = exchangeRates?.PKR || 278.0;
 
@@ -105,6 +105,7 @@ export default function Portfolio() {
     let totMarketVal = 0;
     let totUnrealized = 0;
     let totRealized = 0;
+    let totDayChange = 0;
 
     const minVal = filterState.minAmount ? parseFloat(filterState.minAmount) : null;
     const maxVal = filterState.maxAmount ? parseFloat(filterState.maxAmount) : null;
@@ -158,6 +159,9 @@ export default function Portfolio() {
         if (passFilter) {
           totMarketVal += marketValue;
           totUnrealized += unrealizedPnL;
+          // Today's move in value: what the position was worth before the
+          // quote's change. FX moves within the day are not included.
+          if (change24hPercent > -100) totDayChange += marketValue - marketValue / (1 + change24hPercent / 100);
 
           holdings.push({
             ...p,
@@ -224,7 +228,8 @@ export default function Portfolio() {
       closedList: closed,
       totalMarketValue: totMarketVal,
       totalUnrealizedPnL: totUnrealized,
-      totalRealizedPnL: totRealized
+      totalRealizedPnL: totRealized,
+      totalDayChange: totDayChange
     };
   }, [filteredTransactions, livePrices, exchangeRates, displayCurrency, filterState]);
 
@@ -395,6 +400,17 @@ export default function Portfolio() {
           
           <div className="hero-metrics-row">
             <div className="hero-metrics">
+              <div className="metric-col">
+                <span className="metric-label">24h Change</span>
+                <span className={`metric-value ${totalDayChange >= 0 ? 'positive' : 'negative'}`}>
+                  {totalDayChange >= 0 ? '+' : '-'}{getCurrencySymbol(displayCurrency)}{formatCurrency(Math.abs(totalDayChange))}
+                  {totalMarketValue - totalDayChange > 0 && (
+                    <span style={{ fontSize: '0.8em', opacity: 0.85, marginLeft: 6 }}>
+                      ({totalDayChange >= 0 ? '+' : ''}{((totalDayChange / (totalMarketValue - totalDayChange)) * 100).toFixed(2)}%)
+                    </span>
+                  )}
+                </span>
+              </div>
               <div className="metric-col">
                 <span className="metric-label">Unrealized P&L</span>
                 <span className={`metric-value ${totalUnrealizedPnL >= 0 ? 'positive' : 'negative'}`}>

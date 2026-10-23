@@ -497,12 +497,12 @@
     width: 100%;
   }
 
-  /* Was a left-hugging flex row, so the two figures crowded into roughly half
-     the card with the rest empty. Split the width evenly and divide them. */
+  /* Was a left-hugging flex row, so the figures crowded into part of the card
+     with the rest empty. Split the width evenly and divide them. */
   .hero-metrics {
     width: 100%;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 0;
     padding-top: 14px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
