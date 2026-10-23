@@ -1,11 +1,12 @@
 /* Portfolio value card, shared by Portfolio and Graph. Two zones: what it's
- * worth now (value, recent move, trend) on the left, how it got here
- * (invested, total gain, MWR) on the right. */
+ * worth now (value, recent move, trend) on the left, how it got here on the
+ * right, in groups - money (net invested, total gain) and returns (MWR,
+ * annualised) - each held tight, with a divider between them. */
 .pf-hero {
   position: relative;
   overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   padding: 28px 32px;
   border-radius: 24px;
@@ -32,8 +33,8 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
-  padding-right: 32px;
-  min-width: 0;
+  padding-right: 48px;
+  min-width: 260px;
 }
 
 .pf-hero-label,
@@ -80,14 +81,24 @@
 }
 
 .pf-hero-stats {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 24px;
-  padding-left: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: 40px;
+  padding-left: 40px;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   align-self: stretch;
-  align-content: center;
+}
+
+.pf-stat-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 40px;
+}
+
+.pf-stat-group + .pf-stat-group {
+  padding-left: 40px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .pf-stat {
@@ -116,6 +127,7 @@
   line-height: 1.4;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  max-width: 230px;
 }
 
 /* A stat that also acts as a control (Graph: MWR switches the chart to %). */
@@ -140,12 +152,19 @@ button.pf-stat.active { background: rgba(var(--accent-rgb), 0.1); box-shadow: in
   .pf-stat-sub { font-size: 11.5px; }
 }
 
-/* Narrow desktop: the stats go two by two beside the value. */
+/* Narrow desktop: the two groups stack beside the value. */
 @media (max-width: 1100px) and (min-width: 769px) {
   .pf-hero-stats {
-    grid-auto-flow: row;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    row-gap: 18px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .pf-stat-group + .pf-stat-group {
+    padding: 16px 0 0;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
   }
 }
 
@@ -164,13 +183,25 @@ button.pf-stat.active { background: rgba(var(--accent-rgb), 0.1); box-shadow: in
   .pf-spark { max-width: none; }
 
   .pf-hero-stats {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
     padding: 16px 0 0;
     margin-top: 16px;
     border-left: none;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
-    grid-auto-flow: row;
+  }
+
+  .pf-stat-group {
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px 0;
+    gap: 0;
+  }
+
+  .pf-stat-group + .pf-stat-group {
+    padding: 14px 0 0;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
   }
 
   .pf-stat {

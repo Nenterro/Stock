@@ -368,27 +368,31 @@ export default function Graph() {
           label: period === 'All Time' ? 'all time' : period === 'YTD' ? 'this year' : `past ${period}`
         }}
         stats={[
-          { label: 'Net invested', value: `${sym}${formatCurrency(endPoint?.netInvested || 0)}`, sub: 'put in, minus taken out' },
-          {
-            label: 'Total gain',
-            value: signed(totalGainDollars),
-            tone: totalGainDollars,
-            sub: endPoint ? `${signed(endPoint.unrealizedPnl)} unrealised · ${signed(endPoint.realizedPnl)} realised & income` : null
-          },
-          {
-            label: 'Return (MWR)',
-            value: `${allTimeMwr >= 0 ? '+' : ''}${allTimeMwr.toFixed(2)}%`,
-            tone: allTimeMwr,
-            sub: chartMode === 'gain' ? 'shown in the chart' : 'click to chart it',
-            onClick: () => setChartMode(chartMode === 'gain' ? 'value' : 'gain'),
-            active: chartMode === 'gain'
-          },
-          {
-            label: 'Annualised',
-            value: `${allTimeAnnual >= 0 ? '+' : ''}${allTimeAnnual.toFixed(2)}%`,
-            tone: allTimeAnnual,
-            sub: 'MWR per year'
-          }
+          [
+            { label: 'Net invested', value: `${sym}${formatCurrency(endPoint?.netInvested || 0)}`, sub: 'put in, minus taken out' },
+            {
+              label: 'Total gain',
+              value: signed(totalGainDollars),
+              tone: totalGainDollars,
+              sub: endPoint ? `${signed(endPoint.unrealizedPnl)} unrealised · ${signed(endPoint.realizedPnl)} realised & income` : null
+            }
+          ],
+          [
+            {
+              label: 'Return (MWR)',
+              value: `${allTimeMwr >= 0 ? '+' : ''}${allTimeMwr.toFixed(2)}%`,
+              tone: allTimeMwr,
+              sub: chartMode === 'gain' ? 'shown in the chart' : 'click to chart it',
+              onClick: () => setChartMode(chartMode === 'gain' ? 'value' : 'gain'),
+              active: chartMode === 'gain'
+            },
+            {
+              label: 'Annualised',
+              value: `${allTimeAnnual >= 0 ? '+' : ''}${allTimeAnnual.toFixed(2)}%`,
+              tone: allTimeAnnual,
+              sub: 'MWR per year'
+            }
+          ]
         ]}
       />
 

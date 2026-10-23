@@ -8,7 +8,8 @@ import './PortfolioHero.css';
  *   value      formatted portfolio value
  *   change     { amount, text, pct, label } - the chip under the value
  *   sparkline  optional array of values to draw small under the chip
- *   stats      [{ label, value, sub, tone, onClick, active }]
+ *   stats      groups of stats, [[{ label, value, sub, tone, onClick, active }]]:
+ *              each group sits together, with a divider between groups
  */
 export default function PortfolioHero({ value, change, sparkline, stats = [] }) {
   const up = (change?.amount ?? 0) >= 0;
@@ -31,8 +32,12 @@ export default function PortfolioHero({ value, change, sparkline, stats = [] }) 
       </div>
 
       <div className="pf-hero-stats">
-        {stats.map((s) => (
-          <HeroStat key={s.label} {...s} />
+        {stats.map((group) => (
+          <div key={group.map((s) => s.label).join('|')} className="pf-stat-group">
+            {group.map((s) => (
+              <HeroStat key={s.label} {...s} />
+            ))}
+          </div>
         ))}
       </div>
     </div>

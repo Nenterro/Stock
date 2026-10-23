@@ -429,16 +429,20 @@ export default function Portfolio() {
           change={{ amount: totalDayChange, text: signed(totalDayChange), pct: dayPct, label: 'today' }}
           sparkline={sparkline}
           stats={[
-            // Net of everything taken back out, so value - this = total gain.
-            { label: 'Net invested', value: `${sym}${formatCurrency(totalMarketValue - totalGain)}`, sub: 'put in, minus taken out' },
-            {
-              label: 'Total gain',
-              value: signed(totalGain),
-              tone: totalGain,
-              sub: `${signed(totalUnrealizedPnL)} unrealised · ${signed(totalRealizedPnL + totalIncome)} realised & income`
-            },
-            { label: 'Return (MWR)', value: `${mwrPercent >= 0 ? '+' : ''}${mwrPercent.toFixed(2)}%`, tone: mwrPercent, sub: 'on the money you put in' },
-            { label: 'Annualised', value: `${mwrAnnual >= 0 ? '+' : ''}${mwrAnnual.toFixed(2)}%`, tone: mwrAnnual, sub: 'MWR per year' }
+            [
+              // Net of everything taken back out, so value - this = total gain.
+              { label: 'Net invested', value: `${sym}${formatCurrency(totalMarketValue - totalGain)}`, sub: 'put in, minus taken out' },
+              {
+                label: 'Total gain',
+                value: signed(totalGain),
+                tone: totalGain,
+                sub: `${signed(totalUnrealizedPnL)} unrealised · ${signed(totalRealizedPnL + totalIncome)} realised & income`
+              }
+            ],
+            [
+              { label: 'Return (MWR)', value: `${mwrPercent >= 0 ? '+' : ''}${mwrPercent.toFixed(2)}%`, tone: mwrPercent, sub: 'on the money you put in' },
+              { label: 'Annualised', value: `${mwrAnnual >= 0 ? '+' : ''}${mwrAnnual.toFixed(2)}%`, tone: mwrAnnual, sub: 'MWR per year' }
+            ]
           ]}
         />
 
