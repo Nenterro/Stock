@@ -35,6 +35,9 @@
   width: 100%;
   min-height: calc(100vh - 40px);
   min-height: calc(100dvh - 40px);
+  /* The page sits in a fixed-height flex column; without this it shrinks to
+     the viewport and the content overflows past its bottom padding. */
+  flex-shrink: 0;
   animation: pageFadeIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
