@@ -146,10 +146,14 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
         const amount = shares * price;
         const id = `ibkr_trade_${symbol}_${formattedDate}_${shares.toFixed(4)}_${type.toLowerCase()}`;
 
+        // The company name, when the query includes Description ("EXELIXIS INC").
+        const description = getField(cells, headers, 'Description');
+
         txs.push({
           id,
           source: 'IBKR',
           ticker: symbol.toUpperCase(),
+          ...(description ? { assetName: description } : {}),
           type,
           shares,
           price,

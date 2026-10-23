@@ -10,6 +10,11 @@ import { formatCurrency, getCurrencySymbol, displayTicker } from '../utils/forma
 import { generatePortfolioTimeSeries } from '../utils/portfolio_math';
 import './Portfolio.css';
 
+/** Share counts without float noise: 1.5899999999 -> 1.59, 276 -> 276. */
+function fmtShares(n) {
+  return (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 4 });
+}
+
 function HeroStat({ label, value, sub, tone }) {
   const cls = tone == null ? '' : tone >= 0 ? 'positive' : 'negative';
   return (
@@ -115,6 +120,9 @@ export default function Portfolio() {
       }
 
       const p = positionMap[ticker];
+      // Imports that only know the ticker (IBKR) leave the name as the ticker;
+      // take a real name from any transaction that has one.
+      if (p.assetName === ticker && tx.assetName && tx.assetName.toUpperCase() !== ticker) p.assetName = tx.assetName;
       const shares = Number(tx.shares) || Number(tx.quantity) || 0;
       const price = Number(tx.price) || 0;
       const type = (tx.type || '').toLowerCase();
@@ -293,6 +301,12 @@ export default function Portfolio() {
     }, [filteredTransactions, displayCurrency, exchangeRates, livePrices, historicalPrices, fxSeries]);
 
   const sym = getCurrencySymbol(displayCurrency);
+  // The quote's name when the transactions only ever recorded the ticker.
+  const nameOf = (pos) => {
+    if (pos.assetName && pos.assetName.toUpperCase() !== pos.ticker) return pos.assetName;
+    const q = livePrices[pos.ticker];
+    return (typeof q === 'object' && q?.name) || pos.assetName;
+  };
   const signed = (v) => `${v >= 0 ? '+' : '−'}${sym}${formatCurrency(Math.abs(v))}`;
   const totalGain = totalUnrealizedPnL + totalRealizedPnL + totalIncome;
   const dayPct = totalMarketValue - totalDayChange > 0 ? (totalDayChange / (totalMarketValue - totalDayChange)) * 100 : null;
@@ -519,10 +533,10 @@ export default function Portfolio() {
                       <span className="position-symbol">{displayTicker(p.ticker)}</span>
                       <span className="position-portfolio-tag">{p.portfolio}</span>
                     </div>
-                    <span className="position-name">{p.assetName}</span>
+                    <span className="position-name">{nameOf(p)}</span>
                     {isHoldings && (
                       <span className="position-live-price">
-                        {p.totalShares} shares @ {getCurrencySymbol(p.currency)}{formatCurrency(p.avgBuyPrice)}
+                        {fmtShares(p.totalShares)} shares @ {getCurrencySymbol(p.currency)}{formatCurrency(p.avgBuyPrice)}
                       </span>
                     )}
                   </div>
@@ -537,14 +551,15 @@ export default function Portfolio() {
                     <div className={isHoldings ? `pnl-row ${isPositive ? 'positive' : 'negative'}` : `pnl-badge ${isPositive ? 'positive' : 'negative'}`}>
                       {isPositive ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
                       <span>
-                        {isPositive ? '+' : ''}{formatCurrency(pnl)} ({isPositive ? '+' : ''}{pnlPercent.toFixed(2)}%)
+                        {isPositive ? '+' : '−'}{getCurrencySymbol(p.currency)}{formatCurrency(Math.abs(pnl))} ({isPositive ? '+' : ''}{pnlPercent.toFixed(2)}%)
                       </span>
+                      <span className="pnl-label">{isHoldings ? 'since buy' : 'realised'}</span>
                     </div>
 
                     {/* Closed Positions shares @ price text (Right-aligned) */}
                     {!isHoldings && (
                       <span className="position-live-price" style={{ textAlign: 'right', marginTop: '2px' }}>
-                        {p.totalSellShares} shares @ {getCurrencySymbol(p.currency)}{formatCurrency(p.avgSellPrice)}
+                        {fmtShares(p.totalSellShares)} shares @ {getCurrencySymbol(p.currency)}{formatCurrency(p.avgSellPrice)}
                       </span>
                     )}
 
