@@ -4,8 +4,7 @@ import { ArrowLeft, RefreshCw, Download, Check } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { fetchBudgetTransactions } from '../store/sync';
 import { fetchHistoricalFxRate } from '../utils/api';
-import { buildFingerprintIndex, isExactDuplicate } from '../utils/transactions';
-import { DEFAULT_CATEGORY, DEFAULT_WITHHOLDING, dividendEntries, matchPayee, grossUp, toTrackerTransactions } from '../utils/budgetDividends';
+import { DEFAULT_CATEGORY, DEFAULT_WITHHOLDING, dividendEntries, matchPayee, grossUp, alreadyRecorded, toTrackerTransactions } from '../utils/budgetDividends';
 import { Panel, Empty, Notice, Tag, fmtMoney } from '../components/research/ResearchUI';
 import * as db from '../store/db';
 import './Research.css';
@@ -39,7 +38,6 @@ export default function BudgetDividendImport() {
   }, []);
 
   const withholding = Math.min(Math.max(Number(withholdingPct) / 100 || 0, 0), 0.9);
-  const fingerprints = useMemo(() => buildFingerprintIndex(transactions), [transactions]);
 
   const pkrTickers = useMemo(() => {
     const names = new Map();
@@ -50,7 +48,7 @@ export default function BudgetDividendImport() {
     return [...names.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [transactions]);
 
-  const isRecorded = (entry, ticker) => ticker && isExactDuplicate({ ticker, type: 'DIVIDEND', date: entry.date, shares: 0, price: 0 }, fingerprints);
+  const isRecorded = (entry, ticker) => alreadyRecorded(entry, ticker, transactions);
 
   const load = async () => {
     setLoading(true);

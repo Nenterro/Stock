@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dividendEntries, matchPayee, grossUp, toTrackerTransactions } from '../src/utils/budgetDividends.js';
+import { dividendEntries, matchPayee, grossUp, alreadyRecorded, toTrackerTransactions } from '../src/utils/budgetDividends.js';
 
 const trades = [
   { type: 'BUY', ticker: 'MZNPETF', assetName: 'MEEZAN PAKISTAN EXC', currency: 'PKR', date: '2026-03-05', shares: 1000 },
@@ -50,4 +50,12 @@ test('toTrackerTransactions: gross dividend plus negative tax', () => {
   assert.equal(tax.amount, -190.76);
   assert.equal(div.portfolio, 'Pakistan');
   assert.equal(toTrackerTransactions({ date: '2026-08-31', payee: 'X', net: 50, currency: 'PKR' }, 'X', { withholding: 0 }).length, 1);
+});
+
+test('alreadyRecorded: same stock within a month, whichever date was used', () => {
+  const recorded = [{ type: 'DIVIDEND', ticker: 'OGDC', date: '2026-10-08' }];
+  assert.equal(alreadyRecorded({ date: '2026-10-29' }, 'OGDC', recorded), true);
+  assert.equal(alreadyRecorded({ date: '2026-12-20' }, 'OGDC', recorded), false);
+  assert.equal(alreadyRecorded({ date: '2026-10-29' }, 'FFC', recorded), false);
+  assert.equal(alreadyRecorded({ date: '2026-10-29' }, '', recorded), false);
 });

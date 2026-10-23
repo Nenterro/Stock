@@ -93,6 +93,22 @@ export function matchPayee(payee, payDay, stockTxs = [], { currency = 'PKR', map
   return null;
 }
 
+/**
+ * Is this payout already in the tracker? A dividend for the same stock within
+ * a month counts: one logged by hand on the entitlement date and the bank's
+ * payment date weeks later are the same payout, and PSX companies pay at most
+ * quarterly.
+ */
+export function alreadyRecorded(entry, ticker, stockTxs = []) {
+  if (!ticker) return false;
+  const at = Date.parse(`${entry.date}T00:00:00Z`);
+  return stockTxs.some((t) =>
+    String(t.type || '').toUpperCase() === 'DIVIDEND' &&
+    String(t.ticker || '').toUpperCase() === ticker &&
+    Math.abs(Date.parse(`${toDayString(t.date)}T00:00:00Z`) - at) <= 31 * DAY_MS
+  );
+}
+
 /** Gross dividend and withholding from the net amount that arrived. */
 export function grossUp(net, withholding = DEFAULT_WITHHOLDING) {
   const rate = Math.min(Math.max(Number(withholding) || 0, 0), 0.9);
