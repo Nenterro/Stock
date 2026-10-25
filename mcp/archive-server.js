@@ -35,7 +35,7 @@ tool(
     inputSchema: {}
   },
   async () => {
-    const job = await json('/api/archive/next', { claimant: 'session', preferSession: true });
+    const job = await json('/api/archive/next', { claimant: 'session', preferSession: true }, { timeout: 840000 });
     if (job.empty) return ok(job); // includes unavailable + reason when the archive site is down
     for (const s of job.contactSheets || []) s.file = await localPage(s.file, job.id);
     return ok(job);

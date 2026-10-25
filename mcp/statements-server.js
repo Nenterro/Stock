@@ -37,7 +37,7 @@ tool(
     inputSchema: {}
   },
   async () => {
-    const job = await json('/api/statements/next', {});
+    const job = await json('/api/statements/next', {}, { timeout: 840000 });
     if (job.empty) return ok({ empty: true });
     for (const p of job.pages) p.file = await localPage(p.file, job.id);
     return ok(job);

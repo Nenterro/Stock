@@ -11,7 +11,7 @@ import { config } from './config.js';
 const CONTAINER_DATA = '/app/data';
 const HOST_DATA = process.env.STOCK_API_HOST_DATA || '';
 
-export async function call(path, body) {
+export async function call(path, body, { timeout = 180000 } = {}) {
   if (!config.stockApiToken) throw new Error('STOCK_API_WRITE_TOKEN is not set (mcp/.env or environment).');
   let last;
   for (const base of config.stockApiUrls) {
@@ -20,18 +20,22 @@ export async function call(path, body) {
         method: body === undefined ? 'GET' : 'POST',
         headers: { Authorization: `Bearer ${config.stockApiToken}`, 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(180000)
+        signal: AbortSignal.timeout(timeout)
       });
       return { base, res };
     } catch (err) {
+      // A timeout means the backend got the request and may still be working
+      // on it: sending it again to the next address would run it twice
+      // (a second "next" claims a second filing). Only unreachable falls through.
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') throw new Error(`stock-api took longer than ${timeout / 1000}s on ${path}`);
       last = err;
     }
   }
   throw new Error(`stock-api unreachable: ${last?.message}`);
 }
 
-export async function json(path, body) {
-  const { res } = await call(path, body);
+export async function json(path, body, opts) {
+  const { res } = await call(path, body, opts);
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error || `HTTP ${res.status} from ${path}`);
   return data;
