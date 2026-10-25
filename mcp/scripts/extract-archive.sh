@@ -9,6 +9,8 @@
 #                   Cron runs it hourly with ARCHIVE_HOURS=23: it then uses
 #                   every usage window, waiting out each reset.
 #   Pause everything backtest-related: touch ~/stock-backtest/PAUSE (rm to resume).
+#   Live data first: it yields while extract-statements.sh runs, and while live
+#   filings are pending it reads only the latest annuals (priority >= 1000).
 #   ARCHIVE_MODEL   Claude model alias (default sonnet)
 set -uo pipefail
 
@@ -38,6 +40,13 @@ EOF
 pending() {
   curl -fsS -m 20 "$API/api/archive/status" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).queue.pending))'
 }
+# Reports the live models need (latest annuals, priority >= 1000).
+pending_live() {
+  curl -fsS -m 20 "$API/api/archive/status" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).queue.pendingLive ?? 0))'
+}
+statements_pending() {
+  curl -fsS -m 20 "$API/api/statements" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).queue.pending))'
+}
 
 # A usage limit says when it resets ("resets 2:30am (UTC)"). Sleep until then
 # if that is before the given deadline (epoch seconds); fail otherwise.
@@ -62,6 +71,19 @@ for i in $(seq 1 "$MAX"); do
   [ "$n" = "0" ] && { echo "$(date -Is) queue empty" >>"$log"; break; }
   [ "$(date +%s)" -ge "$stop_at" ] && { echo "$(date -Is) time window over" >>"$log"; break; }
   [ -f "$HOME/stock-backtest/PAUSE" ] && { echo "$(date -Is) paused (~/stock-backtest/PAUSE)" >>"$log"; break; }
+  # Live data comes first. The statements run gets the usage window to itself...
+  if ! flock -n "$HOME/stock-statements/.lock" true 2>/dev/null; then
+    echo "$(date -Is) statements run in progress; yielding" >>"$log"
+    break
+  fi
+  # ...and while live filings wait, only the latest annuals (which feed the
+  # live models) are read; the backtest backlog waits.
+  if [ "$(statements_pending 2>/dev/null || echo 0)" != "0" ]; then
+    export ARCHIVE_MIN_PRIORITY=1000
+    [ "$(pending_live 2>/dev/null || echo 1)" = "0" ] && { echo "$(date -Is) live statements pending; backtest backlog waits" >>"$log"; break; }
+  else
+    unset ARCHIVE_MIN_PRIORITY
+  fi
   start=$(date +%s)
   out="$(cd "$work" && timeout 900 claude -p "$PROMPT" \
     --model "$MODEL" \
