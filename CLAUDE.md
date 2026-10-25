@@ -110,6 +110,18 @@ Backend jobs (`lib/jobs.js`, Pakistan time; status at `/api/jobs`):
   call per stock), global risk statistics and the report archive index, then
   the daily steps.
 
+Global units: Yahoo quotes London prices in pence but market caps in pounds,
+so market caps are never rescaled (until October 2026 they were, which
+understated 740 UK rows 100x and gave them FCF yields of 500%+). Debt, cash
+and FCF reported in another currency than the listing (TSM: TWD vs USD) are
+converted at today's rate instead of being dropped, so the AAOIFI ratios
+(`debtToMarketCap`, `cashToMarketCap`, on today's market cap) exist for
+foreign filers too; `statementsConvertedFrom` names the reporting currency.
+FCF yield is left out for Financial Services (insurers' and banks' cash flow
+is customers' money) and above 50% (data errors); it feeds the value score.
+UK listings with no Yahoo profile (no sector, no industry) and "<name> Ord"
+asset managers are investment trusts: `kind: 'fund'`, not scored as stocks.
+
 PSX preference shares (names with "(Pref)" or "(PRS)") have `kind:
 'preference'`: in the screener, left out of the models and the data-quality
 coverage.
@@ -199,7 +211,25 @@ The live metrics (`statements.allPeriods` → `metricsFor`) use both stores:
 The backtest queue covers only companies that were once among the most
 traded, so the daily `archive top-up` step (`archiveExtract.topUpLatest`)
 also queues the latest annual report of every trading PSX stock at priority
-1000, ahead of the backlog. This is where most PSX ROE comes from.
+1000, ahead of the backlog. Companies whose latest annual the live capture
+already has (`statements.coveredSymbols`) are skipped, so no report is read
+twice. This is where ROE comes from for PSX stocks outside the live tiers.
+
+Live data comes before the backtest. `extract-archive.sh` yields while the
+statements run is going, and while live filings are pending it passes
+`minPriority: 1000`, so only the latest annuals are read and the backlog
+waits. The statements cron runs with `STATEMENTS_MAX=80`.
+
+The archive serves an empty body for reports it lists but hasn't stored
+(most FY2026 annuals in October 2026). Its numeric ids are PSX document ids,
+so `downloadReport` falls back to `dps.psx.com.pk/download/document/<id>.pdf`
+(slow: ~90 KB/s, 3-6 minutes a report). The headless MCP client
+(`mcp/lib/backend.js`) gives `next` calls 14 minutes and never resends a
+timed-out request to the fallback URL: that used to run `next` twice and
+claim a second report.
+
+`get_data_quality` reports coverage for `psxShariahLiquid` (Shariah, >= PKR
+10m a day: what PSX picks are made from) separately from all of PSX.
 
 Statements more than 21 months old are ignored
 (`MAX_STATEMENT_AGE_MONTHS`): an old balance sheet is worse than none,
