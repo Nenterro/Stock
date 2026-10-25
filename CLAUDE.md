@@ -95,16 +95,24 @@ sector vocabulary across PSX, Yahoo and justETF). Write routes need
 
 Backend jobs (`lib/jobs.js`, Pakistan time; status at `/api/jobs`):
 
-- **daily 00:00** - screener build (PSX + global rows, technicals on adjusted
+- **daily 00:00** - today's quotes for the global universe members
+  (`globalUniverse.refreshQuotes`; membership changes only monthly), then the
+  screener build (PSX + global rows, technicals on adjusted
   closes), then the market-wide models in `lib/models/`: expected returns per
   market and fund (`expectedReturns.js`, written to `data/expected_returns.json`),
   per-stock valuation (`valuation.js`: two-stage earnings model solved for
   implied return / implied growth / fair value, plus peer multiples) and factor
   scores (`scores.js`: percentiles vs market and sector, composite with
-  coverage), then the data-quality report (`dataQuality.js`).
+  coverage), then statements discovery and the archive top-up (see below),
+  then the data-quality report (`dataQuality.js`).
 - **monthly, 1st, 00:00** - global universe (`globalUniverse.js`, ~5,100 stocks
-  on IBKR markets) and global fundamentals (`fundamentalsGlobal.js`, one Yahoo
-  call per stock), then the daily steps.
+  on IBKR markets), global fundamentals (`fundamentalsGlobal.js`, one Yahoo
+  call per stock), global risk statistics and the report archive index, then
+  the daily steps.
+
+PSX preference shares (names with "(Pref)" or "(PRS)") have `kind:
+'preference'`: in the screener, left out of the models and the data-quality
+coverage.
 
 Portfolio models run on demand, in `src/utils/models/` (shared by the Planner
 page and the MCP tool `build_model_portfolio`): `risk.js` (monthly USD
@@ -136,11 +144,25 @@ PSX corporate actions come from `lib/psxEvents.js`:
   all, which understated PSX total returns by the dividend yield (4–10% a
   year).
 
+- Rights issues and face-value changes are in neither feed. They come from the
+  company's PSX announcement titles (`announcementEvents`, cached a day).
+
 PSX price history is adjusted on the way in (`lib/adjust.js`): weekend rows
 dropped, splits/bonuses/dividends back-adjusted into `adjClose` (event feed
 where it has the event, PSX's 10% circuit breaker to detect the rest). Raw
 `price` is kept for valuing holdings; every return, risk and model figure uses
 `adjClose`. KSE100TR / KMI30TR are total-return estimates of the price indices.
+- An event explains a circuit-breaking move when what's left after taking it
+  out is an ordinary trading move. Before October 2026 a dividend had to match
+  the drop within 4 points; a dividend plus a 5–9% trading day was taken out
+  as "unexplained" and then applied again, overstating past returns by the
+  dividend.
+- Rights issues with terms in the title ("98.76% at ... Rs.10") use the
+  theoretical ex-rights price; without terms the observed move is taken out
+  and labelled `rights`/`announcement`. Face-value changes try ratios 2, 2.5,
+  4, 5 and 10.
+- Only moves left unexplained (`source: 'detected'`) reach the data-quality
+  report.
 
 ### PSX financial statements
 
@@ -151,7 +173,10 @@ scanned, so they are captured with Claude reading the pages
 - the daily job's `statements discovery` step queues results filings for tier 1
   (holdings, watchlist, planner targets, pushed hourly by the main MCP server:
   every filing PSX lists) and tier 2 (Shariah PSX stocks trading >= PKR 10m a
-  day: latest annual + latest interim). The backend renders pages with poppler.
+  day: latest annual + latest interim). The backend renders pages with poppler:
+  for long reports, the statement pages found in the text layer (headings may
+  break over two lines), else the ten pages from a balance sheet found on its
+  own, else the first 40.
 - `mcp/scripts/extract-statements.sh` (cron on the home server, 01:30 PKT)
   runs one headless `claude -p` session per filing with only
   `mcp/statements-server.js` and `Read`, following `mcp/statements/EXTRACT.md`.
@@ -170,6 +195,11 @@ The live metrics (`statements.allPeriods` → `metricsFor`) use both stores:
 - the live filings;
 - the annual reports read for the backtest archive. A live record wins for
   the same period end.
+
+The backtest queue covers only companies that were once among the most
+traded, so the daily `archive top-up` step (`archiveExtract.topUpLatest`)
+also queues the latest annual report of every trading PSX stock at priority
+1000, ahead of the backlog. This is where most PSX ROE comes from.
 
 Statements more than 21 months old are ignored
 (`MAX_STATEMENT_AGE_MONTHS`): an old balance sheet is worse than none,
@@ -206,9 +236,14 @@ separate from the live data:
     report; EPS × shares vs profit only warns.
   - Per-share figures are never unit-scaled.
 - Extraction runs through `mcp/archive-server.js` + `mcp/archive/EXTRACT.md`
-  + `mcp/scripts/extract-archive.sh` (cron 03:00–09:00 PKT, stops early on a
-  usage limit). Status: `/api/archive/status`. `/api/archive/prioritise`
+  + `mcp/scripts/extract-archive.sh` (cron on the home server, stops early on
+  a usage limit). Status: `/api/archive/status`. `/api/archive/prioritise`
   moves reports to the front of the queue.
+- When the archive site is down it can answer 404 for everything (24 Oct
+  2026: 1,134 reports written off in 14 minutes). Three not-founds in a row
+  now stop the run and go back in the queue. 404s that came in a burst (10+
+  in an hour) are requeued by `retryTransientFailures`, which the daily top-up
+  step runs.
 
 Backtest pieces built on the data above:
 - `lib/backtest/globalPrices.js`: monthly USD total returns rebuilt from
