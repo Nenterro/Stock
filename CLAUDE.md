@@ -117,6 +117,12 @@ and FCF reported in another currency than the listing (TSM: TWD vs USD) are
 converted at today's rate instead of being dropped, so the AAOIFI ratios
 (`debtToMarketCap`, `cashToMarketCap`, on today's market cap) exist for
 foreign filers too; `statementsConvertedFrom` names the reporting currency.
+The third AAOIFI test, `interestIncomeToRevenue` (with `interestIncomeAsOf`),
+comes from Yahoo's fundamentals-timeseries endpoint (`yahoo.timeseries`):
+reported interest income over revenue for the same period, trailing 12
+months where Yahoo has the pair, else the latest annual, nothing older than
+24 months. Fetched with the monthly global fundamentals; all three ratios
+are `screen_stocks` filters.
 FCF yield is left out for Financial Services (insurers' and banks' cash flow
 is customers' money) and above 50% (data errors); it feeds the value score.
 UK listings with no Yahoo profile (no sector, no industry) and "<name> Ord"
