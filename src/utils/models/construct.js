@@ -139,6 +139,51 @@ export function constructPortfolio(p) {
     target: eff[k].target / tSum
   }));
 
+  // Concentration limits inside each stock sleeve: no sector above sectorCap
+  // of the sleeve and no industry above industryCap. Without them a wide
+  // candidate list goes half into whatever is cheapest right now (oil tankers
+  // at peak rates, October 2026). A sleeve that couldn't be filled under the
+  // caps keeps them off, with a note, rather than failing.
+  const capGroups = [];
+  for (const g of groups) {
+    if (g.key === 'globalCore') continue;
+    const levels = [['sector', p.sectorCap ?? 0.4], ['industry', p.industryCap ?? 0.25]].filter(([, c]) => c > 0 && c < 1);
+    if (!levels.length) continue;
+    const mine = [];
+    for (const [field, cap] of levels) {
+      const by = new Map();
+      for (const i of g.idx) {
+        const k = assets[i][field];
+        if (k) by.set(k, [...(by.get(k) || []), i]);
+      }
+      for (const [k, idx] of by) {
+        const max = cap * g.target;
+        if (idx.reduce((s, i) => s + upper[i], 0) > max + 1e-9) mine.push({ name: `${g.name}: ${k}`, field, idx, min: 0, max });
+      }
+    }
+    // What the sleeve can still hold: each industry up to its cap, each
+    // sector up to its cap, assets without a label up to their own limits.
+    const capOf = (field, i) => mine.find((c) => c.field === field && c.idx.includes(i));
+    const industries = new Map();
+    for (const i of g.idx) {
+      const c = capOf('industry', i);
+      const key = c ? c.name : `#${i}`;
+      industries.set(key, { cap: c ? c.max : Infinity, room: (industries.get(key)?.room || 0) + upper[i], sector: capOf('sector', i) });
+    }
+    const sectors = new Map();
+    for (const [key, v] of industries) {
+      const s = v.sector ? v.sector.name : key;
+      sectors.set(s, { cap: v.sector ? v.sector.max : Infinity, room: (sectors.get(s)?.room || 0) + Math.min(v.cap, v.room) });
+    }
+    const capacity = [...sectors.values()].reduce((s, v) => s + Math.min(v.cap, v.room), 0);
+    if (capacity + 1e-9 < g.min) {
+      notes.push(`${g.name}: too few sectors among the candidates to fill ${Math.round(g.min * 100)}% within the concentration limits, so the limits are off for this sleeve.`);
+      continue;
+    }
+    capGroups.push(...mine);
+  }
+  const allGroups = [...groups, ...capGroups];
+
   // Reference: sleeve target split by inverse volatility within the sleeve.
   const wRef = new Array(n).fill(0);
   for (const g of groups) {
@@ -157,10 +202,48 @@ export function constructPortfolio(p) {
   const views = assets.map((a, i) => (a.expected != null ? { index: i, q: a.expected, confidence: a.confidence ?? 0.3 } : null)).filter(Boolean);
   const bl = blackLitterman({ S, wRef, delta, tau, views, rf });
 
-  const optimal = meanVariance({ mu: bl.mu, S, lambda: delta, lower, upper, groups, w0: wRef });
-  const minVar = meanVariance({ mu: null, S, lambda: 1, lower, upper, groups, w0: wRef });
-  const ms = maxSharpe({ mu: bl.mu, S, rf, lower, upper, groups });
-  const rp = riskParity({ S, lower, upper, groups });
+  // Minimum position: a holding is either 0 or at least minPosition (a few
+  // percent: $90 crumbs are tracking work with no effect). Not a convex
+  // constraint, so the recommended portfolio is pruned: solve, drop the
+  // smallest positions under the floor, solve again, until none are left.
+  const minPos = p.minPosition ?? 0;
+  const solveRecommended = (up) => meanVariance({ mu: bl.mu, S, lambda: delta, lower, upper: up, groups: allGroups, w0: wRef });
+  let up = [...upper];
+  let optimal = solveRecommended(up);
+  let pruned = 0;
+  const sleeveOfIdx = (i) => groups.find((g) => g.idx.includes(i));
+  for (let round = 0; minPos > 0 && round < 60; round++) {
+    const under = assets.map((_, i) => i).filter((i) => up[i] > 0 && lower[i] === 0 && optimal[i] < minPos - 1e-6).sort((a, b) => optimal[a] - optimal[b]);
+    if (!under.length) break;
+    // Dust goes at once; real positions a third at a time, since dropping
+    // one can lift another above the floor.
+    const dust = under.filter((i) => optimal[i] < 1e-4);
+    const batch = dust.length ? dust : under.slice(0, Math.ceil(under.length / 3));
+    const next = [...up];
+    for (const i of batch) {
+      const g = sleeveOfIdx(i);
+      const room = g.idx.reduce((s, j) => s + (j === i ? 0 : next[j]), 0);
+      if (room + 1e-9 >= g.min) next[i] = 0;
+    }
+    if (next.every((x, i) => x === up[i])) break;
+    try {
+      const w = solveRecommended(next);
+      pruned += batch.filter((i) => next[i] === 0 && up[i] > 0 && optimal[i] >= 1e-4).length;
+      up = next;
+      optimal = w;
+    } catch {
+      break;
+    }
+  }
+  if (minPos > 0) {
+    // What the optimiser has no way to fill exactly stays as it is; dust is zero.
+    optimal = optimal.map((x) => (x < 1e-6 ? 0 : x));
+    if (pruned) notes.push(`Recommended portfolio: ${pruned} position(s) below the ${(minPos * 100).toFixed(1)}% minimum were dropped and the rest re-optimised.`);
+  }
+  if (capGroups.length) notes.push(`Concentration limits: no sector above ${Math.round((p.sectorCap ?? 0.4) * 100)}% and no industry above ${Math.round((p.industryCap ?? 0.25) * 100)}% of a stock sleeve (${capGroups.length} limits binding on the candidates).`);
+  const minVar = meanVariance({ mu: null, S, lambda: 1, lower, upper, groups: allGroups, w0: wRef });
+  const ms = maxSharpe({ mu: bl.mu, S, rf, lower, upper, groups: allGroups });
+  const rp = riskParity({ S, lower, upper, groups: allGroups });
 
   const describe = (w) => {
     const st = stats(w, bl.mu, S, rf);

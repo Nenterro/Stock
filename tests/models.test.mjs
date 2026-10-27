@@ -158,6 +158,37 @@ test('asset views: funds use their CMA; stocks are shrunk toward the market', ()
   close(p.expected, 0.5 * (1.32 / 1.1 - 1) + 0.5 * 0.15);
 });
 
+test('concentration limits and minimum position shape a wide candidate list', () => {
+  const T = 60;
+  const n = 12;
+  const R = randomReturns(T, Array.from({ length: n }, (_, j) => 0.05 + 0.005 * j), 0.3, 17);
+  const hist = (j) => {
+    let px = 100;
+    return R.map((row, t) => {
+      px *= 1 + row[j];
+      return { date: new Date(Date.UTC(2020, t, 28)).toISOString().slice(0, 10), price: px };
+    });
+  };
+  // Four cheap tankers the views love, plus a spread of other businesses.
+  const sectors = ['Energy', 'Energy', 'Energy', 'Energy', 'Healthcare', 'Healthcare', 'Technology', 'Industrials', 'Basic Materials'];
+  const assets = [
+    { symbol: 'CORE', sleeve: 'globalCore', currency: 'USD', history: hist(0), expected: 0.07, confidence: 0.6 },
+    ...sectors.map((sector, k) => ({ symbol: `S${k}`, sleeve: 'globalStocks', currency: 'USD', history: hist(k + 1), sector, industry: k < 4 ? 'Oil & Gas Midstream' : `${sector} A`, expected: k < 4 ? 0.2 : 0.09, confidence: 0.45 })),
+    { symbol: 'PK1', sleeve: 'pakistan', currency: 'USD', history: hist(10), expected: 0.12 },
+    { symbol: 'PK2', sleeve: 'pakistan', currency: 'USD', history: hist(11), expected: 0.12 }
+  ];
+  const sleeves = { globalCore: { target: 0.35, min: 0.35, max: 0.4 }, globalStocks: { target: 0.35, min: 0.3, max: 0.35 }, pakistan: { target: 0.3, min: 0.28, max: 0.3 } };
+  const free = constructPortfolio({ assets, sleeves, today: '2025-03-01', maxStockWeight: 0.1, sectorCap: 1, industryCap: 1 });
+  const capped = constructPortfolio({ assets, sleeves, today: '2025-03-01', maxStockWeight: 0.1, sectorCap: 0.4, industryCap: 0.25, minPosition: 0.04 });
+  const energy = (pf) => ['S0', 'S1', 'S2', 'S3'].reduce((s, k) => s + (pf.weights[k] || 0), 0);
+  // Unconstrained, the tankers take most of the sleeve; capped, one industry holds at most 25% of it.
+  assert.ok(energy(free.portfolios.recommended) > 0.25 * 0.35 + 0.01, `free energy ${energy(free.portfolios.recommended)}`);
+  assert.ok(energy(capped.portfolios.recommended) <= 0.25 * 0.35 + 1e-4, `capped energy ${energy(capped.portfolios.recommended)}`);
+  for (const [s, w] of Object.entries(capped.portfolios.recommended.weights)) assert.ok(w === 0 || w >= 0.04 - 1e-4, `${s} ${w}`);
+  close(Object.values(capped.portfolios.recommended.weights).reduce((a, b) => a + b, 0), 1, 1e-4);
+  assert.ok(capped.notes.some((x) => /Concentration limits/.test(x)));
+});
+
 test('a sleeve with too few candidates is capped, not infeasible', () => {
   const T = 60;
   const R = randomReturns(T, [0.04, 0.07, 0.08, 0.09, 0.09], 0.4, 5);

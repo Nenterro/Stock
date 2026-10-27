@@ -366,7 +366,7 @@ tool(
   {
     title: 'Model portfolio, projection and stress tests',
     description:
-      'Run the portfolio construction pipeline: monthly USD returns (5y, short histories completed with KSE-100 TR or S&P 500), Ledoit-Wolf shrunk covariance, Black-Litterman returns from a policy reference portfolio plus per-asset views (fund CMAs; stock implied returns shrunk toward their market), and constrained mean-variance within the policy sleeves (global funds 35-45%, global stocks 25-35%, Pakistan 10-40%). Returns the recommended weights with minimum-variance, max-Sharpe, risk-parity and reference alternatives (expected return, volatility, Sharpe, risk contributions), a Monte Carlo projection of the contribution plan (block bootstrap, 10y percentiles, chance of being below the money put in) and historical/hypothetical stress tests for the current and recommended portfolios. Candidates default to current holdings + planner targets + watchlist; core funds ISWD/ISDU/ISDE are added if no global fund is among them. Takes 10-60 seconds.',
+      'Run the portfolio construction pipeline: monthly USD returns (5y, short histories completed with KSE-100 TR or S&P 500), Ledoit-Wolf shrunk covariance, Black-Litterman returns from a policy reference portfolio plus per-asset views (fund CMAs; stock implied returns shrunk toward their market), and constrained mean-variance within the policy sleeves (global funds 35-45%, global stocks 25-35%, Pakistan 10-40%). Returns the recommended weights with minimum-variance, max-Sharpe, risk-parity and reference alternatives (expected return, volatility, Sharpe, risk contributions), a Monte Carlo projection of the contribution plan (block bootstrap, 10y percentiles, chance of being below the money put in) and historical/hypothetical stress tests for the current and recommended portfolios. Candidates default to current holdings + planner targets + watchlist; core funds ISWD/ISDU/ISDE are added if no global fund is among them. Give it a wide candidate list (extraSymbols): concentration limits (sectorCap, industryCap per stock sleeve) and a minimum position (minPositionUsd, by pruning) keep the result to a handful of real, diversified holdings. The output still needs judgement: peak-cycle earnings, tradability (lot sizes) and theses. Takes 10-90 seconds.',
     inputSchema: {
       extraSymbols: z.array(z.string()).default([]).describe('More candidates to consider, e.g. ideas from screen_stocks'),
       useResearch: z.boolean().default(true).describe('Include planner targets and watchlist as candidates'),
@@ -379,10 +379,14 @@ tool(
         .record(z.string(), z.object({ target: z.number(), min: z.number(), max: z.number() }))
         .optional()
         .describe('Override sleeve bounds, keys globalCore / globalStocks / pakistan'),
-      comparePakistan: z.array(z.number()).optional().describe('Also project with these Pakistan sleeve targets, e.g. [0.1, 0.3, 0.4]')
+      comparePakistan: z.array(z.number()).optional().describe('Also project with these Pakistan sleeve targets, e.g. [0.1, 0.3, 0.4]'),
+      sectorCap: z.number().min(0).max(1).default(0.4).describe('Max share of a stock sleeve in one sector (1 = off)'),
+      industryCap: z.number().min(0).max(1).default(0.25).describe('Max share of a stock sleeve in one industry (1 = off)'),
+      minPositionUsd: z.number().min(0).default(150).describe('Smallest holding in the recommended portfolio, USD (0 = off): smaller ones are dropped and the rest re-optimised'),
+      investNow: z.number().min(0).default(0).describe('New money about to be invested, USD; the minimum position is sized against the portfolio after it goes in')
     }
   },
-  async ({ extraSymbols, useResearch, monthly, contributionGrowth, years, maxStockWeight, rf, sleeves, comparePakistan }) => {
+  async ({ extraSymbols, useResearch, monthly, contributionGrowth, years, maxStockWeight, rf, sleeves, comparePakistan, sectorCap, industryCap, minPositionUsd, investNow }) => {
     const pos = await pf.positions({ currency: 'USD' });
     let extra = [...extraSymbols];
     const rows = await pf.research();
@@ -401,7 +405,7 @@ tool(
         screenerRow: (s) => api.screenerRow(s)
       }
     });
-    const base = { ...inputs, holdings: pos.holdings, fxSeries, rf, maxStockWeight, monthly, contributionGrowth, years };
+    const base = { ...inputs, holdings: pos.holdings, fxSeries, rf, maxStockWeight, monthly, contributionGrowth, years, sectorCap, industryCap, minPositionUsd, investNow };
     const result = runModels({ ...base, sleeves: sleeves ? { ...DEFAULT_SLEEVES, ...sleeves } : undefined });
 
     let pakistanComparison;

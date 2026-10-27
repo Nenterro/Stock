@@ -78,7 +78,8 @@ export async function buildInputs(p) {
       source: view?.source || null,
       held: held.includes(s),
       score: rows[s]?.score ?? null,
-      sector: rows[s]?.sector ?? null
+      sector: rows[s]?.sector ?? null,
+      industry: rows[s]?.industry ?? null
     });
   }
   const proxies = Object.fromEntries(Object.values(PROXIES).filter((s) => histories[s]).map((s) => [s, histories[s]]));
@@ -106,9 +107,14 @@ function usdSeries(history, currency, fxSeries) {
  * recommended portfolios.
  *
  * @param {Object} p  inputs from buildInputs plus { holdings, fxSeries, sleeves,
- *                    rf, maxStockWeight, monthly, years, contributionGrowth, paths }
+ *                    rf, maxStockWeight, monthly, years, contributionGrowth, paths,
+ *                    sectorCap, industryCap, minPositionUsd, investNow }
+ *   minPositionUsd  smallest holding worth having, in USD of the portfolio
+ *                   after investNow (new money about to go in) is added
  */
 export function runModels(p) {
+  const totalNow = (p.holdings || []).reduce((s, h) => s + (h.marketValue || 0), 0);
+  const base = totalNow + (p.investNow || 0);
   const built = constructPortfolio({
     assets: p.assets,
     proxies: p.proxies,
@@ -116,10 +122,12 @@ export function runModels(p) {
     fxSeries: p.fxSeries,
     rf: p.rf,
     maxStockWeight: p.maxStockWeight,
+    sectorCap: p.sectorCap,
+    industryCap: p.industryCap,
+    minPosition: p.minPositionUsd > 0 && base > 0 ? Math.min(p.minPositionUsd / base, p.maxStockWeight ?? 0.1) : p.minPosition,
     today: p.today
   });
   const symbols = built.returnSeries.symbols;
-  const totalNow = (p.holdings || []).reduce((s, h) => s + (h.marketValue || 0), 0);
   const currentW = symbols.map((s) => {
     const h = p.holdings?.find((x) => x.ticker === s);
     return totalNow > 0 && h ? h.marketValue / totalNow : 0;
