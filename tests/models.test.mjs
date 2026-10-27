@@ -187,6 +187,12 @@ test('concentration limits and minimum position shape a wide candidate list', ()
   for (const [s, w] of Object.entries(capped.portfolios.recommended.weights)) assert.ok(w === 0 || w >= 0.04 - 1e-4, `${s} ${w}`);
   close(Object.values(capped.portfolios.recommended.weights).reduce((a, b) => a + b, 0), 1, 1e-4);
   assert.ok(capped.notes.some((x) => /Concentration limits/.test(x)));
+
+  // One market: the stocks the views like best all listed in Japan.
+  const japan = assets.map((a) => (a.sleeve === 'globalStocks' ? { ...a, sector: undefined, industry: undefined, region: a.expected > 0.1 ? 'jp' : 'us' } : a));
+  const byMarket = constructPortfolio({ assets: japan, sleeves, today: '2025-03-01', maxStockWeight: 0.1, regionCap: 0.5 });
+  const jp = ['S0', 'S1', 'S2', 'S3'].reduce((s, k) => s + (byMarket.portfolios.recommended.weights[k] || 0), 0);
+  assert.ok(jp <= 0.5 * 0.35 + 1e-4, `japan ${jp}`);
 });
 
 test('a sleeve with too few candidates is capped, not infeasible', () => {

@@ -79,7 +79,8 @@ export async function buildInputs(p) {
       held: held.includes(s),
       score: rows[s]?.score ?? null,
       sector: rows[s]?.sector ?? null,
-      industry: rows[s]?.industry ?? null
+      industry: rows[s]?.industry ?? null,
+      region: rows[s]?.region ?? null
     });
   }
   const proxies = Object.fromEntries(Object.values(PROXIES).filter((s) => histories[s]).map((s) => [s, histories[s]]));
@@ -108,7 +109,7 @@ function usdSeries(history, currency, fxSeries) {
  *
  * @param {Object} p  inputs from buildInputs plus { holdings, fxSeries, sleeves,
  *                    rf, maxStockWeight, monthly, years, contributionGrowth, paths,
- *                    sectorCap, industryCap, minPositionUsd, investNow }
+ *                    sectorCap, industryCap, regionCap, minPositionUsd, investNow }
  *   minPositionUsd  smallest holding worth having, in USD of the portfolio
  *                   after investNow (new money about to go in) is added
  */
@@ -124,6 +125,7 @@ export function runModels(p) {
     maxStockWeight: p.maxStockWeight,
     sectorCap: p.sectorCap,
     industryCap: p.industryCap,
+    regionCap: p.regionCap,
     minPosition: p.minPositionUsd > 0 && base > 0 ? Math.min(p.minPositionUsd / base, p.maxStockWeight ?? 0.1) : p.minPosition,
     today: p.today
   });

@@ -147,7 +147,12 @@ export function constructPortfolio(p) {
   const capGroups = [];
   for (const g of groups) {
     if (g.key === 'globalCore') continue;
-    const levels = [['sector', p.sectorCap ?? 0.4], ['industry', p.industryCap ?? 0.25]].filter(([, c]) => c > 0 && c < 1);
+    // region: a wide list sized for the future portfolio put 80% of the stock
+    // sleeve in Japan. A level with one value in the sleeve (Pakistan's
+    // region) has nothing to spread across, so it is skipped.
+    const levels = [['sector', p.sectorCap ?? 0.4], ['industry', p.industryCap ?? 0.25], ['region', p.regionCap ?? 0.5]]
+      .filter(([, c]) => c > 0 && c < 1)
+      .filter(([field]) => new Set(g.idx.map((i) => assets[i][field]).filter(Boolean)).size > 1);
     if (!levels.length) continue;
     const mine = [];
     for (const [field, cap] of levels) {
@@ -175,7 +180,17 @@ export function constructPortfolio(p) {
       const s = v.sector ? v.sector.name : key;
       sectors.set(s, { cap: v.sector ? v.sector.max : Infinity, room: (sectors.get(s)?.room || 0) + Math.min(v.cap, v.room) });
     }
-    const capacity = [...sectors.values()].reduce((s, v) => s + Math.min(v.cap, v.room), 0);
+    // Regions cut across sectors: the sleeve holds at most the smaller of the two.
+    const regions = new Map();
+    for (const i of g.idx) {
+      const c = capOf('region', i);
+      const key = c ? c.name : `#${i}`;
+      regions.set(key, { cap: c ? c.max : Infinity, room: (regions.get(key)?.room || 0) + upper[i] });
+    }
+    const capacity = Math.min(
+      [...sectors.values()].reduce((s, v) => s + Math.min(v.cap, v.room), 0),
+      [...regions.values()].reduce((s, v) => s + Math.min(v.cap, v.room), 0)
+    );
     if (capacity + 1e-9 < g.min) {
       notes.push(`${g.name}: too few sectors among the candidates to fill ${Math.round(g.min * 100)}% within the concentration limits, so the limits are off for this sleeve.`);
       continue;
@@ -240,7 +255,7 @@ export function constructPortfolio(p) {
     optimal = optimal.map((x) => (x < 1e-6 ? 0 : x));
     if (pruned) notes.push(`Recommended portfolio: ${pruned} position(s) below the ${(minPos * 100).toFixed(1)}% minimum were dropped and the rest re-optimised.`);
   }
-  if (capGroups.length) notes.push(`Concentration limits: no sector above ${Math.round((p.sectorCap ?? 0.4) * 100)}% and no industry above ${Math.round((p.industryCap ?? 0.25) * 100)}% of a stock sleeve (${capGroups.length} limits binding on the candidates).`);
+  if (capGroups.length) notes.push(`Concentration limits: no sector above ${Math.round((p.sectorCap ?? 0.4) * 100)}%, no industry above ${Math.round((p.industryCap ?? 0.25) * 100)}% and no market above ${Math.round((p.regionCap ?? 0.5) * 100)}% of a stock sleeve (${capGroups.length} limits binding on the candidates).`);
   const minVar = meanVariance({ mu: null, S, lambda: 1, lower, upper, groups: allGroups, w0: wRef });
   const ms = maxSharpe({ mu: bl.mu, S, rf, lower, upper, groups: allGroups });
   const rp = riskParity({ S, lower, upper, groups: allGroups });
