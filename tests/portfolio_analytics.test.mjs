@@ -122,6 +122,24 @@ test('contribution plan handles new tickers and leftovers', () => {
   close(plan.leftover, 5);
 });
 
+test('a lot-sized position waits in the stand-in until one lot fits its target', () => {
+  // $3,000 portfolio + $2,500; Astellas-like lot of 100 x $16 = $1,600 at a 7% target.
+  const holdings = [{ ticker: 'ISWD', marketValue: 3000, price: 70 }];
+  const targets = { ISWD: 0.93, '4503.T': 0.07 };
+  const early = planContribution(holdings, targets, 2500, { prices: { '4503.T': 16 }, lots: { '4503.T': 100 } });
+  assert.equal(early.waiting.length, 1);
+  close(early.waiting[0].readyAtPortfolio, 1600 / 0.07);
+  assert.ok(!early.buys.some((b) => b.ticker === '4503.T'));
+  assert.equal(early.after.find((r) => r.ticker === '4503.T').target, 0.07);
+
+  // At $25,000 + $2,500 it is ready: one whole lot, not 1.7 lots of odd shares.
+  const later = planContribution([{ ticker: 'ISWD', marketValue: 25000, price: 70 }], targets, 2500, { prices: { '4503.T': 16 }, lots: { '4503.T': 100 } });
+  assert.equal(later.waiting.length, 0);
+  const lot = later.buys.find((b) => b.ticker === '4503.T');
+  assert.equal(lot.shares % 100, 0);
+  assert.ok(lot.shares >= 100);
+});
+
 test('risk metrics on a steady series', () => {
   const series = [];
   let f = 1;

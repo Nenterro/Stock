@@ -695,7 +695,15 @@ export function feeDrag(holdings = [], expenseRatios = {}) {
  * @param {Array}  holdings   from computePositions().holdings
  * @param {Object} targets    { TICKER: 0.25, ... }  (normalised if not summing to 1)
  * @param {number} amount     new money in the display currency
- * @param {Object} opts       { prices: { TICKER: displayPrice }, wholeShares, minTrade }
+ * Positions bought in lots (Tokyo: 100 shares) wait until one lot is no more
+ * than their target share of the portfolio; until then their weight is held
+ * in a stand-in (ISWD by default, which holds Japan anyway) and the plan says
+ * at what portfolio value each becomes ready. A ready position whose share of
+ * this contribution is under one lot gets a whole lot if the money allows,
+ * else its share goes to the stand-in this month.
+ *
+ * @param {Object} opts       { prices: { TICKER: displayPrice }, wholeShares, minTrade,
+ *                              lots: { TICKER: sharesPerLot }, standIn: 'ISWD' }
  */
 export function planContribution(holdings = [], targets = {}, amount = 0, opts = {}) {
   const prices = { ...(opts.prices || {}) };
@@ -707,6 +715,20 @@ export function planContribution(holdings = [], targets = {}, amount = 0, opts =
   const value = Object.fromEntries(holdings.map((h) => [h.ticker, h.marketValue || 0]));
   const current = holdings.reduce((a, h) => a + (h.marketValue || 0), 0);
   const after = current + amount;
+
+  const lots = Object.fromEntries(Object.entries(opts.lots || {}).map(([k, v]) => [k.toUpperCase(), Number(v) || 1]));
+  const lotCost = (t) => (lots[t] > 1 && prices[t] > 0 ? lots[t] * prices[t] : null);
+  const standIn = String(opts.standIn || 'ISWD').toUpperCase();
+  const targetSet = { ...target };
+  const waiting = [];
+  for (const [t, w] of Object.entries(target)) {
+    const cost = lotCost(t);
+    if (!cost || (value[t] || 0) > 0 || t === standIn) continue;
+    if (cost <= w * after + 1e-9) continue;
+    waiting.push({ ticker: t, target: w, lotCost: cost, readyAtPortfolio: cost / w, heldIn: standIn });
+    target[standIn] = (target[standIn] || 0) + w;
+    target[t] = 0;
+  }
   const untargeted = holdings.filter((h) => !(h.ticker in target)).reduce((a, h) => a + h.marketValue, 0);
 
   // Untargeted positions keep their value; targets apply to the rest.
@@ -720,7 +742,30 @@ export function planContribution(holdings = [], targets = {}, amount = 0, opts =
     .filter((g) => g.gap > 0)
     .map((g) => ({ ticker: g.ticker, amount: gapSum > 0 ? (amount * g.gap) / gapSum : 0 }));
   // If everything is at or over target, spread pro rata to targets.
-  if (buys.length === 0) buys = Object.entries(target).map(([t, w]) => ({ ticker: t, amount: amount * w }));
+  if (buys.length === 0) buys = Object.entries(target).filter(([, w]) => w > 0).map(([t, w]) => ({ ticker: t, amount: amount * w }));
+
+  // Lots: a ready position short of a whole lot gets one, taken from the
+  // other buys, if its gap and this month's money allow; otherwise its share
+  // waits in the stand-in.
+  for (const b of buys.filter((x) => lotCost(x.ticker)).sort((x, y) => lotCost(x.ticker) - lotCost(y.ticker))) {
+    const cost = lotCost(b.ticker);
+    if (b.amount >= cost) continue;
+    const gap = gaps.find((g) => g.ticker === b.ticker)?.gap || 0;
+    const others = buys.filter((x) => x !== b && !lotCost(x.ticker));
+    const room = others.reduce((a, x) => a + x.amount, 0);
+    if (gap >= cost * 0.75 && room >= cost - b.amount) {
+      const need = cost - b.amount;
+      for (const x of others) x.amount -= (need * x.amount) / room;
+      b.amount = cost;
+    } else {
+      const s = buys.find((x) => x.ticker === standIn);
+      if (s) s.amount += b.amount;
+      else buys.push({ ticker: standIn, amount: b.amount });
+      warnings.push(`${b.ticker}: this month's share (${b.amount.toFixed(0)}) is under one lot (${cost.toFixed(0)}); held in ${standIn} for now.`);
+      b.amount = 0;
+    }
+  }
+  buys = buys.filter((b) => b.amount > 0);
 
   const minTrade = Number(opts.minTrade) || 0;
   if (minTrade > 0) {
@@ -742,7 +787,8 @@ export function planContribution(holdings = [], targets = {}, amount = 0, opts =
       spent += b.amount;
       return { ...b, price: null, shares: null };
     }
-    const shares = opts.wholeShares ? Math.floor(b.amount / price) : b.amount / price;
+    const lot = lots[b.ticker] > 1 ? lots[b.ticker] : 1;
+    const shares = lot > 1 ? Math.floor(b.amount / (price * lot) + 1e-9) * lot : opts.wholeShares ? Math.floor(b.amount / price) : b.amount / price;
     const cost = shares * price;
     spent += cost;
     return { ...b, price, shares, amount: cost };
@@ -753,12 +799,13 @@ export function planContribution(holdings = [], targets = {}, amount = 0, opts =
   for (const b of buys) newValue[b.ticker] = (newValue[b.ticker] || 0) + b.amount;
   const newTotal = Object.values(newValue).reduce((a, b) => a + b, 0);
   const tickers = [...new Set([...Object.keys(value), ...Object.keys(target)])];
-  const row = (t, v, tot) => ({ ticker: t, value: v[t] || 0, weight: tot > 0 ? (v[t] || 0) / tot : 0, target: target[t] ?? null });
+  const row = (t, v, tot) => ({ ticker: t, value: v[t] || 0, weight: tot > 0 ? (v[t] || 0) / tot : 0, target: targetSet[t] ?? null });
 
   return {
     amount,
     buys: buys.sort((a, b) => b.amount - a.amount),
     leftover: amount - spent,
+    waiting,
     before: tickers.map((t) => row(t, value, current)),
     after: tickers.map((t) => row(t, newValue, newTotal)),
     warnings

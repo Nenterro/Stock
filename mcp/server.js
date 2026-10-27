@@ -312,17 +312,19 @@ tool(
   {
     title: 'Plan new money',
     description:
-      'Split a new contribution across holdings to move toward target weights without selling. Uses the saved targets (set_targets) unless `targets` is given. Targets may include tickers not yet held. Read-only: it returns a plan, nothing is bought or recorded.',
+      'Split a new contribution across holdings to move toward target weights without selling. Uses the saved targets (set_targets) unless `targets` is given. Targets may include tickers not yet held. Positions bought in lots (Tokyo and Singapore: 100 shares) wait until one lot is no more than their target share of the portfolio; meanwhile their weight is held in `standIn` (default ISWD), and `waiting` says at what portfolio value each becomes ready. Read-only: it returns a plan, nothing is bought or recorded.',
     inputSchema: {
       amount: z.number().positive().describe('Amount of new money in `currency`'),
       currency,
       targets: z.record(z.string(), z.number()).optional().describe('Ticker -> weight; normalised if it does not sum to 1'),
       wholeShares: z.boolean().default(true),
       minTrade: z.number().optional().describe('Skip buys smaller than this amount'),
+      lots: z.record(z.string(), z.number()).optional().describe('Ticker -> shares per lot, where not 1; .T and .SI default to 100'),
+      standIn: z.string().default('ISWD').describe('Where the weight of positions waiting for a whole lot is held'),
       portfolio: portfolioArg
     }
   },
-  async ({ amount, currency: ccy, targets, wholeShares, minTrade, portfolio }) => {
+  async ({ amount, currency: ccy, targets, wholeShares, minTrade, lots, standIn, portfolio }) => {
     const p = await pf.positions({ currency: ccy, portfolio });
     let t = targets;
     if (!t) {
@@ -331,7 +333,8 @@ tool(
       if (!t) return fail('No saved targets. Pass `targets` or save them with set_targets first.');
     }
     // Prices for tickers not yet held, converted to the display currency.
-    const missing = Object.keys(t).map((s) => s.toUpperCase()).filter((s) => !p.holdings.some((h) => h.ticker === s));
+    const missing = [...new Set([...Object.keys(t), standIn].map((s) => s.toUpperCase()))].filter((s) => !p.holdings.some((h) => h.ticker === s));
+    const lotSizes = { ...Object.fromEntries(Object.keys(t).filter((s) => /\.(T|SI)$/i.test(s)).map((s) => [s.toUpperCase(), 100])), ...(lots || {}) };
     const prices = {};
     if (missing.length) {
       const q = await api.quotes(missing);
@@ -342,7 +345,7 @@ tool(
         prices[s] = native === ccy ? quote.price : native === 'PKR' ? quote.price / p.fxRate : quote.price * p.fxRate;
       }
     }
-    return ok(planContribution(p.holdings, t, amount, { prices, wholeShares, minTrade }));
+    return ok(planContribution(p.holdings, t, amount, { prices, wholeShares, minTrade, lots: lotSizes, standIn }));
   }
 );
 
