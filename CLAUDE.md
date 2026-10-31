@@ -199,6 +199,11 @@ scanned, so they are captured with Claude reading the pages
 - every submission is validated: the balance sheet must balance within 1%, and
   profit must match PSX's own annual or quarterly table (single or summed
   quarters) within 1.5%. Failures are held as needs-review, never stored.
+- held filings are rechecked every night in the discovery step
+  (`statements.recheckHeld`), no Claude needed: most are held only because
+  PSX hasn't published that period yet, so the stored extraction is accepted
+  once it matches. One that still misses after PSX adds figures is read
+  again once (`MAX_REREADS`), then waits for review.
 - accepted figures (PKR thousands) feed ROE, ROA, debt/equity, current ratio,
   receivables/revenue, cash and debt to market cap, and FCF yield into
   fundamentals and the screener. ROE uses the latest annual filing; with only
