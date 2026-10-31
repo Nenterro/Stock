@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Report-archive extraction MCP server (backtest data).
+ * Report-archive extraction MCP server.
  *
- * The nightly headless run (mcp/scripts/extract-archive.sh) reads historical
- * PSX annual reports into point-in-time statements, one report per session,
+ * The nightly headless run (mcp/scripts/extract-archive.sh) reads the latest
+ * PSX annual reports into statements, one report per session,
  * following mcp/archive/EXTRACT.md. Text reports arrive as the statement
  * pages' text; scanned ones as contact sheets to pick pages from, then full
  * page images. Needs only the stock-api write token.
@@ -35,8 +35,8 @@ tool(
     inputSchema: {}
   },
   async () => {
-    // ARCHIVE_MIN_PRIORITY (set by extract-archive.sh while live statements
-    // have work): only reports live decisions need, not the backtest backlog.
+    // ARCHIVE_MIN_PRIORITY (1000, set by extract-archive.sh): only the latest
+    // annuals the daily archive top-up queues.
     const minPriority = process.env.ARCHIVE_MIN_PRIORITY ? Number(process.env.ARCHIVE_MIN_PRIORITY) : undefined;
     const job = await json('/api/archive/next', { claimant: 'session', preferSession: true, minPriority }, { timeout: 840000 });
     if (job.empty) return ok(job); // includes unavailable + reason when the archive site is down

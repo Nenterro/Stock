@@ -1,10 +1,9 @@
 # Extracting statements from an archived PSX annual report
 
-You are reading one historical annual report of a PSX-listed company, for a
-backtest. The figures will be used as they were known at the time, so read
-them **as published in this report**. Never "correct" them with later
-knowledge, and don't use anything you remember about the company: only this
-document.
+You are reading one annual report of a PSX-listed company. Its figures feed
+the live models (ROE, Shariah ratios), so read them **as published in this
+report**. Never "correct" them with other knowledge, and don't use anything
+you remember about the company: only this document.
 
 The backend checks what you submit. The balance sheet must balance, for both
 the current and the comparative year. Your figures are also compared with the
@@ -89,8 +88,8 @@ value.
 
 ### Shariah screening inputs (industrial companies)
 
-The backtest rebuilds each year's Shariah status from these. Getting them
-right matters as much as the totals.
+The Shariah ratios are computed from these. Getting them right matters as
+much as the totals.
 
 - `islamicFinancing`: the part of `totalBorrowings` that is Islamic
   (diminishing musharaka, sukuk, ijarah, murabaha, istisna, Islamic running

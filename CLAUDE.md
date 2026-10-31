@@ -156,8 +156,6 @@ PSX corporate actions come from `lib/psxEvents.js`:
 - Dividends and bonus issues before that come from Yahoo (`SYMBOL.KA`).
   Yahoo restates old dividends per today's share, so each one is multiplied
   back by the splits Yahoo records after it.
-- Delisted companies aren't on Yahoo. For the backtest their dividends come
-  from the dividends paid in their archived cash flow statements.
 - Until October 2026 the adjusted series had no dividends before 2023 at
   all, which understated PSX total returns by the dividend yield (4–10% a
   year).
@@ -211,20 +209,18 @@ filing with `retry_statement`.
 
 The live metrics (`statements.allPeriods` → `metricsFor`) use both stores:
 - the live filings;
-- the annual reports read for the backtest archive. A live record wins for
-  the same period end.
+- the annual reports read from the report archive (below). A live record
+  wins for the same period end.
 
-The backtest queue covers only companies that were once among the most
-traded, so the daily `archive top-up` step (`archiveExtract.topUpLatest`)
-also queues the latest annual report of every trading PSX stock at priority
-1000, ahead of the backlog. Companies whose latest annual the live capture
-already has (`statements.coveredSymbols`) are skipped, so no report is read
-twice. This is where ROE comes from for PSX stocks outside the live tiers.
+The daily `archive top-up` step (`archiveExtract.topUpLatest`) queues the
+latest annual report of every trading PSX stock at priority 1000. Companies
+whose latest annual the live capture already has
+(`statements.coveredSymbols`) are skipped, so no report is read twice. This
+is where ROE comes from for PSX stocks outside the live tiers.
 
-Live data comes before the backtest. `extract-archive.sh` yields while the
-statements run is going, and while live filings are pending it passes
-`minPriority: 1000`, so only the latest annuals are read and the backlog
-waits. The statements cron runs with `STATEMENTS_MAX=80`.
+`extract-archive.sh` reads only priority >= 1000 (`minPriority: 1000`) and
+yields while the statements run is going. The statements cron runs with
+`STATEMENTS_MAX=80`.
 
 The archive serves an empty body for reports it lists but hasn't stored
 (most FY2026 annuals in October 2026). Its numeric ids are PSX document ids,
@@ -242,26 +238,14 @@ Statements more than 21 months old are ignored
 because it looks complete. Since October 2026 this covers most liquid PSX
 stocks: grade-A Shariah names went from 0 to 33 when it was connected.
 
-### Backtest data (point-in-time)
-
-Built in October 2026 for an honest historical backtest. Lives in the backend,
-separate from the live data:
+### Report archive
 
 - `lib/archive.js` indexes the report archive at financials.psx.com.pk: 684
-  companies, delisted ones included, with about 22k annual and interim
-  reports from 2013.
-  - `availableAt` is when a report's figures could first be known: the
-    real posting date from 2018 on, else the filing deadline (annual
-    +4 months, half-year +2, quarter +1).
-  - Archive "years" are sometimes off by one, so the extracted period end
-    is the truth.
-- `lib/backtest/psxPrices.js` builds monthly adjusted closes and traded
-  value for every archive company from Sarmaaya, which keeps delisted
-  histories. `liquidAt(month)` is the point-in-time liquidity universe
-  (top 150 by 3-month traded value), so there is no survivorship bias.
-  Union 2013–2026: 332 companies, 35 of them no longer trading; some of
-  those are renames (ICI→LCI, GSKCH→HALEON, SHEL→WAFI) that need merging.
-- `lib/archiveExtract.js` reads annual reports into `archive_statements`.
+  companies with about 22k annual and interim reports from 2013. Archive
+  "years" are sometimes off by one, so the extracted period end is the truth.
+- `lib/archiveExtract.js` reads annual reports into `archive_statements`
+  (about 3,000 periods, mostly read for a historical backtest that was
+  removed on 1 November 2026: too much subscription usage for what it gave).
   - Text reports: the backend finds the statements as a cluster of
     headings (balance sheet, then P&L or "comprehensive income", then cash
     flow, unconsolidated first) and passes their text.
@@ -272,30 +256,13 @@ separate from the live data:
     report; EPS × shares vs profit only warns.
   - Per-share figures are never unit-scaled.
 - Extraction runs through `mcp/archive-server.js` + `mcp/archive/EXTRACT.md`
-  + `mcp/scripts/extract-archive.sh` (cron on the home server, stops early on
-  a usage limit). Status: `/api/archive/status`. `/api/archive/prioritise`
-  moves reports to the front of the queue.
+  + `mcp/scripts/extract-archive.sh` (nightly cron on the home server, stops
+  early on a usage limit). Status: `/api/archive/status`.
 - When the archive site is down it can answer 404 for everything (24 Oct
   2026: 1,134 reports written off in 14 minutes). Three not-founds in a row
   now stop the run and go back in the queue. 404s that came in a burst (10+
   in an hour) are requeued by `retryTransientFailures`, which the daily top-up
   step runs.
-
-Backtest pieces built on the data above:
-- `lib/backtest/globalPrices.js`: monthly USD total returns rebuilt from
-  dividend events, plus FX, oil and PSX price indices.
-- `lib/backtest/shariah.js`: KMI-style screen.
-- `lib/backtest/asOf.js`: the time machine. Point-in-time rows run through
-  the production `scores`, `valuation` and `gradeRow` code.
-- `lib/backtest/diagnostics.js`: factor information coefficients and
-  quintile spreads.
-- `lib/backtest/blind.js`: anonymised tasks that test Claude's judgement
-  without hindsight, with leakage checks.
-- `mcp/scripts/backtest.js`: the walk-forward engine, using the production
-  `constructPortfolio`. 2023 onwards is held out unless `--holdout`.
-- `mcp/scripts/gdelt-daily.py` + `geo-indicators.js`: GDELT news indicators.
-
-Routes are under `/api/backtest/*` and need the write token.
 
 ### News and geopolitics
 

@@ -44,7 +44,7 @@ digest() {
 echo "$(date -Is) start: model $MODEL" >>"$log"
 out="$(digest)"
 code=$?
-# A usage limit (the backtest may have used the window): wait for the reset,
+# A usage limit (other runs may have used the window): wait for the reset,
 # up to 6 hours, and try once more, so a busy window doesn't skip a day.
 t="$(grep -oE 'resets [0-9]{1,2}(:[0-9]{2})?(am|pm) \(UTC\)' <<<"$out" | head -1 | awk '{print $2}')"
 if [ -n "$t" ] && ! grep -q 'RESULT ' <<<"$out"; then
