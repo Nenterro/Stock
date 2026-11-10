@@ -1,4 +1,4 @@
-import { fetchHistoricalFxRate, fetchTextFromBackend } from './api';
+import { fetchHistoricalFxRate, fetchTextFromBackend } from './api.js';
 
 /**
  * Interactive Brokers (IBKR) Flex Query & Statement Parser
@@ -69,6 +69,11 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
   let headers = {};
 
   let tradeCount = 0;
+  let fxCount = 0;
+  const rawTrades = [];
+  // Currency conversions per pair and day ("GBP.USD|2026-10-30"), summed so
+  // the rate is the average IBKR actually paid that day.
+  const fxRates = new Map();
   // Dividends and withholding, netted per symbol, pay date and kind: IBKR
   // posts corrections as a reversal plus a re-booking on the same day.
   const cashEvents = new Map();
@@ -141,32 +146,34 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
         const settleDateRaw = getField(cells, headers, 'SettleDate');
         const settleDate = settleDateRaw ? parseIbkrDate(settleDateRaw) : null;
 
-        const type = qty > 0 ? 'BUY' : 'SELL';
-        const shares = Math.abs(qty);
-        const amount = shares * price;
-        const id = `ibkr_trade_${symbol}_${formattedDate}_${shares.toFixed(4)}_${type.toLowerCase()}`;
+        // Currency conversions (IBKR's "CASH" asset class, symbols like
+        // GBP.USD) are not holdings. They only tell us the rate a foreign
+        // trade was paid at that day.
+        const assetClass = getField(cells, headers, 'AssetClass').toUpperCase();
+        const fxPair = symbol.toUpperCase().match(/^([A-Z]{3})\.([A-Z]{3})$/);
+        if (assetClass === 'CASH' || fxPair) {
+          if (fxPair && price > 0) {
+            const key = `${fxPair[1]}.${fxPair[2]}|${formattedDate}`;
+            const r = fxRates.get(key) || { units: 0, value: 0 };
+            r.units += Math.abs(qty);
+            r.value += Math.abs(qty) * price;
+            fxRates.set(key, r);
+          }
+          fxCount++;
+          continue;
+        }
+
+        const currency = (getField(cells, headers, 'CurrencyPrimary') || getField(cells, headers, 'Currency') || 'USD').toUpperCase();
+        const feeCurrency = (getField(cells, headers, 'IBCommissionCurrency') || currency).toUpperCase();
+        const fxToBase = parseFloat(getField(cells, headers, 'FXRateToBase')) || null;
 
         // The company name, when the query includes Description ("EXELIXIS INC").
         const description = getField(cells, headers, 'Description');
 
-        txs.push({
-          id,
-          source: 'IBKR',
-          ticker: symbol.toUpperCase(),
-          ...(description ? { assetName: description } : {}),
-          type,
-          shares,
-          price,
-          fees: fee,
-          amount,
-          currency: 'USD',
-          exchangeRate: 1.0,
-          date: formattedDate,
-          settlementDate: settleDate,
-          note: `Imported from IBKR (${type === 'BUY' ? 'Buy' : 'Sell'} ${shares} @ $${price.toFixed(2)})`
+        rawTrades.push({
+          symbol: symbol.toUpperCase(), description, qty, price, fee, feeCurrency,
+          currency, fxToBase, date: formattedDate, settleDate
         });
-
-        tradeCount++;
       }
 
       // 2. Cash Transactions section (Dividends, Taxes, Deposits, Withdrawals)
@@ -214,6 +221,54 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
     }
   }
 
+  // USD per unit of `ccy` on `date`: the day's own conversions first, then
+  // IBKR's FXRateToBase (a USD-based account), else unknown.
+  const usdRate = (ccy, date, fxToBase) => {
+    if (ccy === 'USD') return 1;
+    const direct = fxRates.get(`${ccy}.USD|${date}`);
+    if (direct?.units) return direct.value / direct.units;
+    const inverse = fxRates.get(`USD.${ccy}|${date}`);
+    if (inverse?.units) return inverse.units / inverse.value;
+    return fxToBase && fxToBase !== 1 ? fxToBase : null;
+  };
+
+  // The app records international trades in USD, so trades in another
+  // currency (London lines in GBP) are converted at the rate they were paid.
+  // nativePrice keeps the listing price, which is what duplicate checks use.
+  for (const t of rawTrades) {
+    const type = t.qty > 0 ? 'BUY' : 'SELL';
+    const shares = Math.abs(t.qty);
+    const rate = usdRate(t.currency, t.date, t.fxToBase);
+    const feeRate = usdRate(t.feeCurrency, t.date, t.feeCurrency === t.currency ? t.fxToBase : null);
+    if (rate == null || feeRate == null) {
+      onLog(`⚠️ Skipped ${type} ${shares} ${t.symbol} on ${t.date}: priced in ${t.currency} and no ${t.currency}.USD rate in the statement. Add FXRateToBase to the Flex Query, or enter it by hand.`);
+      continue;
+    }
+    const native = t.currency !== 'USD';
+    const price = native ? Math.round(t.price * rate * 10000) / 10000 : t.price;
+    const fees = t.feeCurrency !== 'USD' ? Math.round(t.fee * feeRate * 100) / 100 : t.fee;
+    const sym = native ? `${t.currency} ` : '$';
+
+    txs.push({
+      id: `ibkr_trade_${t.symbol}_${t.date}_${shares.toFixed(4)}_${type.toLowerCase()}`,
+      source: 'IBKR',
+      ticker: t.symbol,
+      ...(t.description ? { assetName: t.description } : {}),
+      type,
+      shares,
+      price,
+      fees,
+      amount: shares * price,
+      currency: 'USD',
+      exchangeRate: 1.0,
+      ...(native ? { nativeCurrency: t.currency, nativePrice: t.price } : {}),
+      date: t.date,
+      settlementDate: t.settleDate,
+      note: `Imported from IBKR (${type === 'BUY' ? 'Buy' : 'Sell'} ${shares} @ ${sym}${t.price.toFixed(2)}${native ? `, converted at ${rate.toFixed(4)}` : ''})`
+    });
+    tradeCount++;
+  }
+
   for (const ev of cashEvents.values()) {
     // A fully reversed payment nets to zero and is nothing to record.
     if (Math.abs(ev.amount) < 0.005) continue;
@@ -238,7 +293,7 @@ export function parseIbkrCsv(csvData, onLog = () => {}) {
     });
   }
 
-  onLog(`Found: ${tradeCount} Trades, ${dividendCount} Dividends, ${taxCount} Taxes. Skipped ${depositCount + withdrawalCount} Cash Transfers.`);
+  onLog(`Found: ${tradeCount} Trades, ${dividendCount} Dividends, ${taxCount} Taxes. Skipped ${depositCount + withdrawalCount} Cash Transfers and ${fxCount} Currency Conversions.`);
   return txs;
 }
 

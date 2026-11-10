@@ -51,7 +51,10 @@ export function transactionFingerprint(tx) {
   const type = String(tx.type || '').trim().toUpperCase();
   const day = toDayString(tx.date);
 
-  return [ticker, type, day, quantise(tx.shares, 4), quantise(tx.price, 4)].join('|');
+  // A trade converted from its listing currency is matched on the price it
+  // traded at, so a re-import at a slightly different rate is still a match.
+  const price = tx.nativePrice ?? tx.price;
+  return [ticker, type, day, quantise(tx.shares, 4), quantise(price, 4)].join('|');
 }
 
 /**
