@@ -65,7 +65,17 @@ export async function buildInputs(p) {
     }
     const currency = currencyOf(s);
     const kind = rows[s]?.kind || kindOf(s);
-    const view = assetView({ symbol: s, kind, currency, region: rows[s]?.region, impliedReturn: rows[s]?.impliedReturn, scoreCoverage: rows[s]?.scoreCoverage }, er);
+    const view = assetView({
+      symbol: s,
+      kind,
+      currency,
+      region: rows[s]?.region,
+      country: rows[s]?.country,
+      impliedReturn: rows[s]?.impliedReturn,
+      scoreCoverage: rows[s]?.scoreCoverage,
+      scores: rows[s]?.scores,
+      dividendYield: rows[s]?.dividendYield
+    }, er);
     assets.push({
       symbol: s,
       sleeve: sleeveOf({ kind, currency }),
@@ -76,6 +86,9 @@ export async function buildInputs(p) {
       expected: view?.expected ?? null,
       confidence: view?.confidence ?? 0.2,
       source: view?.source || null,
+      taxDrag: view?.taxDrag ?? null,
+      tilt: view?.tilt ?? null,
+      viewGroup: view?.group ?? null,
       held: held.includes(s),
       score: rows[s]?.score ?? null,
       sector: rows[s]?.sector ?? null,
@@ -149,7 +162,13 @@ export function runModels(p) {
       contributionGrowth: p.contributionGrowth || 0,
       years: p.years || 10,
       paths: p.paths || 4000,
-      seed: 20261021
+      seed: 20261021,
+      // Expected returns are estimates: about 1.5 points a year of error
+      // common to everything, plus 1-3 points per sleeve (Pakistan's base case
+      // is about twice its long-run realised dollar return). Set
+      // driftSd: false for the old known-returns projection.
+      groups: symbols.map((s) => built.assets.find((a) => a.symbol === s)?.sleeve),
+      driftSd: p.driftSd === false ? null : p.driftSd || { common: 0.015, byGroup: { globalCore: 0.01, globalStocks: 0.015, pakistan: 0.03 } }
     });
 
   const projections = {

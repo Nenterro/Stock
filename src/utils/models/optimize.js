@@ -176,8 +176,87 @@ function checkFeasible(n, l, u, groups) {
 /* ------------------------------------------------------------------ optimise */
 
 /**
+ * The same problem by ADMM (the OSQP splitting): minimise 1/2 x'Px + q'x
+ * subject to lo <= Ax <= hi, with A = [identity (bounds); ones (budget);
+ * one row per group]. The linear system is factored once (n x n, inverted),
+ * so an iteration costs O(n^2 + mn) and a solve takes milliseconds, where
+ * projected gradient with Dykstra projections onto ~80 group constraints took
+ * minutes (November 2026: full runs of 10+ minutes). Returns null if it does
+ * not converge, so the caller can fall back.
+ */
+export function admmQP({ P, q, l, u, groups, x0, maxIter = 6000, eps = 1e-8 }) {
+  const n = q.length;
+  const rows = [
+    ...Array.from({ length: n }, (_, i) => ({ idx: [i], lo: l[i], hi: u[i] })),
+    { idx: Array.from({ length: n }, (_, i) => i), lo: 1, hi: 1 },
+    ...groups.map((g) => ({ idx: g.idx, lo: g.min, hi: g.max }))
+  ];
+  const m = rows.length;
+  const Ax = (x) => rows.map((r) => r.idx.reduce((s, i) => s + x[i], 0));
+  const ATy = (y) => {
+    const out = new Array(n).fill(0);
+    rows.forEach((r, k) => {
+      if (y[k] !== 0) for (const i of r.idx) out[i] += y[k];
+    });
+    return out;
+  };
+  const sigma = 1e-6;
+  const alpha = 1.6;
+  let rhoBase = 0.1;
+  const rhoOf = (base) => rows.map((r) => (r.hi - r.lo < 1e-9 ? 1e3 * base : base));
+  let rho = rhoOf(rhoBase);
+  const factor = () => {
+    const K = P.map((row, i) => row.map((x, j) => x + (i === j ? sigma : 0)));
+    rows.forEach((r, k) => {
+      for (const i of r.idx) for (const j of r.idx) K[i][j] += rho[k];
+    });
+    return invert(K);
+  };
+  let Kinv = factor();
+  let x = x0 ? [...x0] : new Array(n).fill(1 / n);
+  let z = Ax(x).map((v, k) => Math.min(rows[k].hi, Math.max(rows[k].lo, v)));
+  let y = new Array(m).fill(0);
+  const inf = (v) => v.reduce((a, b) => Math.max(a, Math.abs(b)), 0);
+  for (let it = 1; it <= maxIter; it++) {
+    const rhs0 = ATy(z.map((zk, k) => rho[k] * zk - y[k]));
+    const rhs = x.map((xi, i) => sigma * xi - q[i] + rhs0[i]);
+    const xt = matVec(Kinv, rhs);
+    const zt = Ax(xt);
+    const xNew = xt.map((v, i) => alpha * v + (1 - alpha) * x[i]);
+    const zRelax = zt.map((v, k) => alpha * v + (1 - alpha) * z[k]);
+    const zNew = zRelax.map((v, k) => Math.min(rows[k].hi, Math.max(rows[k].lo, v + y[k] / rho[k])));
+    y = y.map((yk, k) => yk + rho[k] * (zRelax[k] - zNew[k]));
+    x = xNew;
+    z = zNew;
+    if (it % 25 === 0) {
+      const ax = Ax(x);
+      const px = matVec(P, x);
+      const aty = ATy(y);
+      const rPrim = inf(ax.map((v, k) => v - z[k]));
+      const rDual = inf(px.map((v, i) => v + q[i] + aty[i]));
+      const scalePrim = Math.max(inf(ax), inf(z), 1e-12);
+      const scaleDual = Math.max(inf(px), inf(aty), inf(q), 1e-12);
+      if (rPrim <= eps + eps * scalePrim && rDual <= eps + eps * scaleDual) return x;
+      // Adapt rho toward balancing the two residuals (refactor when it moves a lot).
+      if (it % 100 === 0) {
+        const ratio = Math.sqrt(((rPrim / scalePrim) + 1e-16) / ((rDual / scaleDual) + 1e-16));
+        if (ratio > 5 || ratio < 0.2) {
+          const next = Math.min(1e6, Math.max(1e-6, rhoBase * ratio));
+          rhoBase = next;
+          rho = rhoOf(rhoBase);
+          Kinv = factor();
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * maximise mu'w - (lambda/2) w'Sw  subject to bounds and groups.
  * lambda = risk aversion (higher = safer). mu null or zeros = minimum variance.
+ * Solved by ADMM and finished with an exact projection onto the constraints;
+ * accelerated projected gradient is the fallback if ADMM does not converge.
  */
 export function meanVariance({ mu, S, lambda = 3, lower, upper, groups = [], w0 = null, iters = 3000 }) {
   const n = S.length;
@@ -185,6 +264,14 @@ export function meanVariance({ mu, S, lambda = 3, lower, upper, groups = [], w0 
   const u = upper || new Array(n).fill(1);
   checkFeasible(n, l, u, groups);
   const m = mu || new Array(n).fill(0);
+  const admm = admmQP({ P: scaleM(S, lambda), q: m.map((x) => -x), l, u, groups, x0: w0 });
+  if (admm) return project(admm, l, u, groups);
+  return meanVarianceGradient({ m, S, lambda, l, u, groups, w0, iters });
+}
+
+/** Accelerated projected gradient (FISTA) with Dykstra projections: the fallback. */
+export function meanVarianceGradient({ m, S, lambda, l, u, groups, w0, iters }) {
+  const n = S.length;
   const L = lambda * maxEigen(S) || 1;
   const step = 1 / L;
   let w = project(w0 || new Array(n).fill(1 / n), l, u, groups);
@@ -249,26 +336,44 @@ export function riskParity({ S, budgets = null, lower, upper, groups = [], iters
  * @param {number[]}   wRef  reference portfolio (what you'd hold with no views)
  * @param {number}     delta risk aversion implied by the reference portfolio
  * @param {number}     tau   uncertainty of the prior (~1 / years of data)
- * @param {Array}      views [{ index, q (expected total return), confidence 0..1 }]
+ * @param {Array}      views [{ index, q (expected total return), confidence 0..1,
+ *                           group? (views sharing an error source, e.g. a market) }]
  * @param {number}     rf    risk-free rate (views and output are total returns)
+ * @param {Object}     sharedVariance  { group: variance } of the error common to
+ *                     every view in that group
  * @returns {{ mu, prior }}  posterior and prior expected total returns
  */
-export function blackLitterman({ S, wRef, delta = 2.5, tau = 0.05, views = [], rf = 0 }) {
+export function blackLitterman({ S, wRef, delta = 2.5, tau = 0.05, views = [], rf = 0, sharedVariance = {} }) {
   const pi = matVec(S, wRef).map((x) => delta * x); // implied excess returns
   const prior = pi.map((x) => x + rf);
   if (!views.length) return { mu: prior, prior, implied: pi };
 
   const tS = scaleM(S, tau);
   const tSinv = invert(tS);
-  // Absolute views: P picks one asset each; Omega from confidence
-  // (confidence 1 -> view is certain, 0 -> ignored).
+  // Absolute views: P picks one asset each. Omega = each view's own error
+  // (from confidence: 1 -> certain, 0 -> ignored) plus, for views in the same
+  // group, an error they share. Every stock view in a market leans on that
+  // market's expected return, so 30 Japanese stocks are not 30 independent
+  // confirmations of the Japan estimate (October 2026: the optimiser put 80%
+  // of the stock sleeve in Japan).
+  const k = views.length;
+  const own = views.map((v) => {
+    const c = Math.min(0.99, Math.max(0.01, v.confidence ?? 0.5));
+    return (tau * S[v.index][v.index] * (1 - c)) / c;
+  });
+  const shared = (a, b) => (a.group != null && a.group === b.group ? sharedVariance[a.group] || 0 : 0);
+  const anyShared = views.some((a, i) => views.some((b, j) => i !== j && shared(a, b) > 0));
+  const OmegaInv = anyShared
+    ? invert(views.map((a, i) => views.map((b, j) => (i === j ? own[i] + shared(a, b) : shared(a, b)))))
+    : views.map((a, i) => views.map((__, j) => (i === j ? 1 / (own[i] + shared(a, a)) : 0)));
   const A = tSinv.map((row) => [...row]);
   const bvec = matVec(tSinv, pi);
-  for (const v of views) {
-    const c = Math.min(0.99, Math.max(0.01, v.confidence ?? 0.5));
-    const omega = (tau * S[v.index][v.index] * (1 - c)) / c;
-    A[v.index][v.index] += 1 / omega;
-    bvec[v.index] += (v.q - rf) / omega;
+  for (let i = 0; i < k; i++) {
+    for (let j = 0; j < k; j++) {
+      if (OmegaInv[i][j] === 0) continue;
+      A[views[i].index][views[j].index] += OmegaInv[i][j];
+      bvec[views[i].index] += OmegaInv[i][j] * (views[j].q - rf);
+    }
   }
   const post = matVec(invert(A), bvec);
   return { mu: post.map((x) => x + rf), prior, implied: pi };

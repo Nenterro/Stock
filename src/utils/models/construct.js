@@ -28,33 +28,89 @@ export function sleeveOf({ kind, currency }) {
 }
 
 /**
- * Expected USD return and view confidence for one asset, from the backend's
- * models.
+ * Dividend tax withheld at source for a Pakistan-resident individual, by the
+ * company's home country (an ADR pays its home country's dividend, so Rio
+ * Tinto's NYSE listing is UK-taxed). Statutory non-resident rates, no treaty
+ * relief assumed (IBKR rarely applies it at source):
+ *   US 30% (the US-Pakistan treaty's 15% is for corporate holders only)
+ *   UK, Hong Kong, Singapore 0%; Japan 15.315%; Canada 25%; most of Europe
+ *   15-35%; Australia 15% (fully franked dividends are exempt, unfranked 30%)
+ *   Pakistan 15% (filer)
+ * Irish UCITS funds pay out without withholding (their own US tax is already
+ * in the price); US-domiciled funds are taxed like US shares. Pakistan's own
+ * tax on foreign dividends (worldwide income, foreign tax credit) is not
+ * modelled. Sources: PwC tax summaries, IRS treaty tables, November 2026.
+ */
+const DIVIDEND_TAX = {
+  'United States': 0.3, 'United Kingdom': 0, 'Hong Kong': 0, Singapore: 0, Japan: 0.15315, Canada: 0.25, Australia: 0.15,
+  Germany: 0.26375, France: 0.128, Netherlands: 0.15, Switzerland: 0.35, Italy: 0.26, Spain: 0.19, Sweden: 0.3, Denmark: 0.27,
+  Finland: 0.35, Norway: 0.25, Ireland: 0.25, Belgium: 0.3, China: 0.1, Pakistan: 0.15
+};
+const US_DOMICILED_FUNDS = new Set(['SPUS', 'HLAL', 'UMMA', 'SPTE', 'SPRE', 'SPSK']);
+export function dividendTaxRate({ symbol, kind, currency, country }) {
+  if (String(currency).toUpperCase() === 'PKR') return DIVIDEND_TAX.Pakistan;
+  if (kind === 'etf' || kind === 'fund') return US_DOMICILED_FUNDS.has(symbol) ? DIVIDEND_TAX['United States'] : 0;
+  return DIVIDEND_TAX[country] ?? 0.15;
+}
+
+// How far a stock's own valuation moves its view off its market: single-stock
+// estimates are noisy, so they inform the view without dominating it.
+const VALUE_WEIGHT = 0.4;
+// Largest tilt from the non-value factor scores (quality, momentum, growth,
+// low risk), at a percentile of 0 or 1. Documented long-short premia on these
+// factors are a few percent a year; a long-only percentile is worth less.
+const FACTOR_TILT = 0.05;
+const FACTOR_WEIGHTS = { quality: 0.25, momentum: 0.2, growth: 0.15, lowRisk: 0.15 };
+// Error in a market's expected return, shared by every stock view that leans
+// on it (about 3 points a year for an earnings-yield CMA over a decade).
+export const MARKET_VIEW_SD = 0.03;
+
+/**
+ * Expected USD return (after dividend tax withheld at source) and view
+ * confidence for one asset, from the backend's models.
  *   funds:  the fund's own CMA (earnings yield, fee-adjusted)
- *   stocks: valuation implied return, converted to USD and shrunk halfway
- *           toward its market's expected return - single-stock estimates are
- *           noisy, so they inform the view without dominating it
+ *   stocks: market return
+ *           + 40% of the gap between the stock's valuation implied return
+ *             (normalised earnings, in USD) and its market
+ *           + a tilt of up to +/-2.5 points from its quality, momentum, growth
+ *             and low-risk scores (value is already in the implied return)
+ *   both:   less dividend yield x withholding rate
+ * `group` names the market the view leans on, for the shared-error term.
  *
- * @param {Object} a   { symbol, kind, currency, region, impliedReturn (local), scoreCoverage }
+ * @param {Object} a   { symbol, kind, currency, region, country, impliedReturn (local),
+ *                       scoreCoverage, scores, dividendYield }
  * @param {Object} er  /api/models/expected-returns payload
  */
 export function assetView(a, er) {
   if (!er) return null;
+  const taxDrag = Math.max(0, a.dividendYield || 0) * dividendTaxRate(a);
   const fund = er.funds?.find((f) => f.symbol === a.symbol);
-  if (fund) return { expected: fund.expected.base.usd, confidence: 0.6, source: 'fund earnings yield (CMA)' };
+  if (fund) return { expected: fund.expected.base.usd - taxDrag, confidence: 0.6, source: 'fund earnings yield (CMA)', taxDrag, group: null };
 
   const marketKey = String(a.currency).toUpperCase() === 'PKR' ? 'psx' : a.region === 'us' || !a.region ? 'us' : { jp: 'jp', hk: 'hk', ca: 'ca', au: 'au' }[a.region] || 'europe';
   const market = er.markets?.find((m) => m.key === marketKey) || er.markets?.find((m) => m.key === 'us');
   if (!market) return null;
   const marketUsd = market.expected.base.usd;
-  if (a.impliedReturn == null) return { expected: marketUsd, confidence: 0.2, source: `${market.name} market return (no stock estimate)` };
+
+  const f = a.scores || {};
+  const present = Object.entries(FACTOR_WEIGHTS).filter(([k]) => f[k] != null);
+  const wSum = present.reduce((s, [, w]) => s + w, 0);
+  const factor = present.length >= 2 ? present.reduce((s, [k, w]) => s + w * f[k], 0) / wSum : null;
+  const tilt = factor != null ? (factor - 0.5) * FACTOR_TILT : 0;
+
+  if (a.impliedReturn == null) {
+    return { expected: marketUsd + tilt - taxDrag, confidence: 0.2, source: `${market.name} market return (no stock estimate)`, taxDrag, tilt, group: market.key };
+  }
   const usd = (1 + a.impliedReturn) / (1 + (market.depreciationVsUsd || 0)) - 1;
   const capped = Math.max(-0.2, Math.min(0.4, usd));
   const coverage = a.scoreCoverage ?? 0.5;
   return {
-    expected: 0.5 * capped + 0.5 * marketUsd,
+    expected: marketUsd + VALUE_WEIGHT * (capped - marketUsd) + tilt - taxDrag,
     confidence: Math.max(0.1, 0.35 * coverage + 0.1),
-    source: 'valuation implied return, shrunk toward market'
+    source: 'market return + valuation (normalised earnings) + factor scores, after dividend tax',
+    taxDrag,
+    tilt,
+    group: market.key
   };
 }
 
@@ -214,8 +270,11 @@ export function constructPortfolio(p) {
   // Prior uncertainty: about 0.05 for five years of monthly data.
   const tau = 3 / rets.R.length;
 
-  const views = assets.map((a, i) => (a.expected != null ? { index: i, q: a.expected, confidence: a.confidence ?? 0.3 } : null)).filter(Boolean);
-  const bl = blackLitterman({ S, wRef, delta, tau, views, rf });
+  const views = assets.map((a, i) => (a.expected != null ? { index: i, q: a.expected, confidence: a.confidence ?? 0.3, group: a.viewGroup ?? null } : null)).filter(Boolean);
+  // Stock views carry (1 - VALUE_WEIGHT) of their market's estimate, and its error.
+  const sharedSd = (p.marketViewSd ?? MARKET_VIEW_SD) * (1 - VALUE_WEIGHT);
+  const sharedVariance = Object.fromEntries([...new Set(views.map((v) => v.group).filter(Boolean))].map((g) => [g, sharedSd ** 2]));
+  const bl = blackLitterman({ S, wRef, delta, tau, views, rf, sharedVariance });
 
   // Minimum position: a holding is either 0 or at least minPosition (a few
   // percent: $90 crumbs are tracking work with no effect). Not a convex
@@ -288,6 +347,8 @@ export function constructPortfolio(p) {
       view: a.expected,
       viewConfidence: a.confidence,
       viewSource: a.source || null,
+      dividendTax: a.taxDrag ?? null,
+      factorTilt: a.tilt ?? null,
       prior: bl.prior[i],
       posterior: bl.mu[i],
       filledMonths: rets.filled[a.symbol] || 0

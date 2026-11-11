@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ledoitWolf, sampleCov, monthlyReturns } from '../src/utils/models/risk.js';
 import { project, meanVariance, blackLitterman, riskParity, stats, invert, matVec } from '../src/utils/models/optimize.js';
 import { projectPlan, stressTest, rng } from '../src/utils/models/simulate.js';
-import { constructPortfolio, assetView } from '../src/utils/models/construct.js';
+import { constructPortfolio, assetView, dividendTaxRate } from '../src/utils/models/construct.js';
 
 const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} !== ${b}`);
 
@@ -153,9 +153,55 @@ test('asset views: funds use their CMA; stocks are shrunk toward the market', ()
   };
   assert.equal(assetView({ symbol: 'ISWD' }, er).expected, 0.065);
   const s = assetView({ symbol: 'X', currency: 'USD', region: 'us', impliedReturn: 0.17, scoreCoverage: 1 }, er);
-  close(s.expected, 0.5 * 0.17 + 0.5 * 0.07);
+  close(s.expected, 0.07 + 0.4 * (0.17 - 0.07));
+  assert.equal(s.group, 'us');
   const p = assetView({ symbol: 'P', currency: 'PKR', impliedReturn: 0.32 }, er);
-  close(p.expected, 0.5 * (1.32 / 1.1 - 1) + 0.5 * 0.15);
+  close(p.expected, 0.15 + 0.4 * (1.32 / 1.1 - 1 - 0.15));
+});
+
+test('asset views: factor scores tilt, dividend tax comes off', () => {
+  const er = { funds: [{ symbol: 'ISWD', expected: { base: { usd: 0.075 } } }], markets: [{ key: 'us', name: 'US', expected: { base: { usd: 0.07 } }, depreciationVsUsd: 0 }] };
+  const base = { symbol: 'X', currency: 'USD', region: 'us', impliedReturn: 0.07, scoreCoverage: 1 };
+  // Top-percentile quality and momentum, no other factors: +2.5 points at most.
+  const good = assetView({ ...base, scores: { quality: 1, momentum: 1 } }, er);
+  close(good.tilt, 0.025);
+  close(good.expected, 0.07 + 0.025);
+  // One factor alone is not enough to tilt.
+  assert.equal(assetView({ ...base, scores: { quality: 1 } }, er).tilt, 0);
+  // A US company's 3% dividend loses 30% at source: 0.9 points a year.
+  const us = assetView({ ...base, country: 'United States', dividendYield: 0.03 }, er);
+  close(us.taxDrag, 0.009);
+  close(us.expected, 0.07 - 0.009);
+  // A UK company (or its ADR) is not withheld; an Irish UCITS fund neither.
+  assert.equal(assetView({ ...base, country: 'United Kingdom', dividendYield: 0.05 }, er).taxDrag, 0);
+  assert.equal(assetView({ symbol: 'ISWD', kind: 'etf', dividendYield: 0.015 }, er).expected, 0.075);
+  assert.equal(dividendTaxRate({ symbol: 'SPUS', kind: 'etf', currency: 'USD' }), 0.3);
+  assert.equal(dividendTaxRate({ symbol: 'FFC', currency: 'PKR' }), 0.15);
+});
+
+test('Black-Litterman: views sharing an error count for less than independent ones', () => {
+  // Ten identical uncorrelated assets, all with the same bullish view.
+  const n = 10;
+  const S = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 0.09 : 0.02)));
+  const wRef = new Array(n).fill(1 / n);
+  const views = Array.from({ length: n }, (_, i) => ({ index: i, q: 0.2, confidence: 0.3, group: 'jp' }));
+  const indep = blackLitterman({ S, wRef, delta: 3, tau: 0.05, views, rf: 0.02 });
+  const shared = blackLitterman({ S, wRef, delta: 3, tau: 0.05, views, rf: 0.02, sharedVariance: { jp: 0.0004 } });
+  assert.ok(shared.mu[0] < indep.mu[0] - 0.005, `${shared.mu[0]} vs ${indep.mu[0]}`);
+  assert.ok(shared.mu[0] > indep.prior[0]);
+  // No shared variance: identical to the diagonal case.
+  const none = blackLitterman({ S, wRef, delta: 3, tau: 0.05, views, rf: 0.02, sharedVariance: { jp: 0 } });
+  for (let i = 0; i < n; i++) close(none.mu[i], indep.mu[i], 1e-10);
+});
+
+test('projection: uncertainty in expected returns widens outcomes', () => {
+  const R = randomReturns(60, [0.05, 0.1], 0.3, 5);
+  const base = { R, symbols: ['A', 'B'], expected: [0.07, 0.12], weights: [0.6, 0.4], startValues: [0, 0], monthly: 1000, years: 10, paths: 3000, seed: 9, groups: ['core', 'pak'] };
+  const known = projectPlan(base);
+  const unsure = projectPlan({ ...base, driftSd: { common: 0.015, byGroup: { core: 0.01, pak: 0.03 } } });
+  const spread = (o) => o.byYear[9].p95 - o.byYear[9].p5;
+  assert.ok(spread(unsure) > spread(known) * 1.05, `${spread(unsure)} vs ${spread(known)}`);
+  assert.ok(Math.abs(unsure.byYear[9].median / known.byYear[9].median - 1) < 0.05);
 });
 
 test('concentration limits and minimum position shape a wide candidate list', () => {

@@ -387,7 +387,7 @@ tool(
       industryCap: z.number().min(0).max(1).default(0.25).describe('Max share of a stock sleeve in one industry (1 = off)'),
       regionCap: z.number().min(0).max(1).default(0.5).describe('Max share of the global stock sleeve in one market, e.g. Japan (1 = off)'),
       minPositionUsd: z.number().min(0).default(150).describe('Smallest holding in the recommended portfolio, USD (0 = off): smaller ones are dropped and the rest re-optimised'),
-      riskAversion: z.number().min(0.5).max(10).optional().describe('The investor's own risk aversion for the recommended portfolio: 1 = growth-optimal (Kelly), 2 = half Kelly, higher = safer. Default: the value implied by the policy mix (about 3.5)'),
+      riskAversion: z.number().min(0.5).max(10).optional().describe("The investor's own risk aversion for the recommended portfolio: 1 = growth-optimal (Kelly), 2 = half Kelly, higher = safer. Default: the one saved in research settings, else the value implied by the policy mix (about 3.5)"),
       investNow: z.number().min(0).default(0).describe('New money to plan for, USD: the minimum position is sized against the portfolio after it goes in. Income grows, so evaluate at the size the portfolio is heading for (e.g. 12 months of contributions), not today\'s')
     }
   },
@@ -395,7 +395,9 @@ tool(
     const pos = await pf.positions({ currency: 'USD' });
     let extra = [...extraSymbols];
     const rows = await pf.research();
-    rf ??= rows.find((r) => r.kind === 'settings')?.data?.riskFreeRate?.USD;
+    const settings = rows.find((r) => r.kind === 'settings')?.data;
+    rf ??= settings?.riskFreeRate?.USD;
+    riskAversion ??= settings?.riskAversion;
     if (useResearch) {
       extra.push(...rows.filter((r) => r.kind === 'watch').map((r) => r.symbol));
       extra.push(...Object.keys(rows.find((r) => r.kind === 'targets')?.data?.targets || {}));
@@ -678,7 +680,9 @@ tool(
       riskFreeRate: z.object({ PKR: z.number().optional(), USD: z.number().optional() }).optional(),
       monthlyContribution: z.object({ amount: z.number(), currency: z.enum(['USD', 'PKR']) }).optional(),
       displayCurrency: z.enum(['USD', 'PKR']).optional(),
-      source: z.string().optional().describe('Where the risk-free rates came from, with date')
+      source: z.string().optional().describe('Where the risk-free rates came from, with date'),
+      riskAversion: z.number().min(0.5).max(10).optional().describe("The investor's risk aversion for build_model_portfolio: 1 = growth-optimal (Kelly), 2 = half Kelly, higher = safer"),
+      riskAversionNote: z.string().optional().describe('Why this risk aversion, with date')
     }
   },
   async (args) => {
@@ -689,6 +693,8 @@ tool(
     if (args.monthlyContribution) next.monthlyContribution = args.monthlyContribution;
     if (args.displayCurrency) next.displayCurrency = args.displayCurrency;
     if (args.source) next.riskFreeSource = args.source;
+    if (args.riskAversion != null) next.riskAversion = args.riskAversion;
+    if (args.riskAversionNote) next.riskAversionNote = args.riskAversionNote;
     const saved = await upsertResearch('settings', '*', next);
     return ok({ saved: saved.data });
   }

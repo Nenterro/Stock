@@ -43,6 +43,12 @@ function quantile(sorted, q) {
  *   paths        simulations (default 5000)
  *   block        block length in months (default 6)
  *   seed
+ *   groups       N labels (e.g. sleeves), for driftSd.byGroup
+ *   driftSd      { common, byGroup: { label: sd } }: uncertainty in the expected
+ *                returns themselves, annual. Each path draws one error shared by
+ *                every asset and one per group, held for the whole horizon, so
+ *                the spread of outcomes includes not knowing the true returns,
+ *                not only market noise around known ones. Off when omitted.
  */
 export function projectPlan(p) {
   const T = p.R.length;
@@ -58,8 +64,13 @@ export function projectPlan(p) {
 
   // Re-centre: replace each asset's historical monthly mean with its expected.
   const histMean = Array.from({ length: N }, (_, j) => p.R.reduce((s, row) => s + row[j], 0) / T);
-  const target = (p.expected || histMean.map((m) => (1 + m) ** 12 - 1)).map((e) => (1 + e) ** (1 / 12) - 1);
-  const Radj = p.R.map((row) => row.map((x, j) => x - histMean[j] + target[j]));
+  const expectedAnnual = p.expected || histMean.map((m) => (1 + m) ** 12 - 1);
+  const target = expectedAnnual.map((e) => (1 + e) ** (1 / 12) - 1);
+  const dev = p.R.map((row) => row.map((x, j) => x - histMean[j]));
+  const drift = p.driftSd || null;
+  const labels = drift ? [...new Set(p.groups || [])] : [];
+  const normal = () => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());
+  const pathTarget = new Float64Array(N);
 
   const checkpoints = [];
   for (let y = 1; y <= Math.ceil(months / 12); y++) checkpoints.push(Math.min(y * 12, months));
@@ -68,6 +79,14 @@ export function projectPlan(p) {
   const maxDD = new Float64Array(paths);
 
   for (let s = 0; s < paths; s++) {
+    if (drift) {
+      const zc = normal() * (drift.common || 0);
+      const zg = Object.fromEntries(labels.map((g) => [g, normal() * (drift.byGroup?.[g] || 0)]));
+      for (let j = 0; j < N; j++) {
+        const annual = Math.max(-0.5, expectedAnnual[j] + zc + (zg[p.groups?.[j]] || 0));
+        pathTarget[j] = (1 + annual) ** (1 / 12) - 1;
+      }
+    } else pathTarget.set(target);
     const v = Float64Array.from(start);
     let monthly = monthly0;
     let peak = v.reduce((a, b) => a + b, 0);
@@ -78,10 +97,10 @@ export function projectPlan(p) {
     while (t < months) {
       const b0 = Math.floor(rand() * (T - block + 1));
       for (let k = 0; k < block && t < months; k++, t++) {
-        const r = Radj[b0 + k];
+        const r = dev[b0 + k];
         let total = 0;
         for (let j = 0; j < N; j++) {
-          v[j] *= 1 + r[j];
+          v[j] *= 1 + r[j] + pathTarget[j];
           total += v[j];
         }
         // Drawdown on market moves only, before this month's money arrives.

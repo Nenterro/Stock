@@ -155,12 +155,31 @@ coverage.
 Portfolio models run on demand, in `src/utils/models/` (shared by the Planner
 page and the MCP tool `build_model_portfolio`): `risk.js` (monthly USD
 returns, short histories filled from KSE-100 TR / S&P 500, Ledoit-Wolf),
-`optimize.js` (Black-Litterman, constrained mean-variance via projected
-gradient with Dykstra projections, min-variance, max-Sharpe, risk parity),
-`simulate.js` (block-bootstrap projection of the contribution plan, stress
-tests), `construct.js` (policy sleeves, views, the end-to-end run),
-`pipeline.js` (data in, everything out). Tests: `npm test` here, and
-`node --test test/` in `~/Docker/stock-api`.
+`optimize.js` (Black-Litterman, constrained mean-variance, min-variance,
+max-Sharpe, risk parity), `simulate.js` (block-bootstrap projection of the
+contribution plan, stress tests), `construct.js` (policy sleeves, views, the
+end-to-end run), `pipeline.js` (data in, everything out). Tests: `npm test`
+here, and `node --test test/*.test.js` in `~/Docker/stock-api`.
+`node mcp/scripts/bench-construct.mjs` caches one real input set and times
+a full run offline.
+
+Model choices made in the November 2026 review (change them knowingly):
+- Mean-variance is solved by ADMM (OSQP-style, `admmQP`), finished with an
+  exact projection; projected gradient with Dykstra is only the fallback. A
+  full run with ~80 concentration limits went from 10+ minutes to ~2 s, with
+  the same optimum.
+- Stock views (`assetView`) = market expected return + 40% of the gap to the
+  stock's valuation implied return + a tilt of up to +/-2.5 points from the
+  non-value factor scores, less dividend yield x withholding at source
+  (`dividendTaxRate`: US 30% for a Pakistan resident, UK/HK/SG 0%, Irish
+  UCITS 0%, PSX 15%).
+- Views in the same market share an error (`MARKET_VIEW_SD`, 3 points,
+  via a non-diagonal Omega), so many stocks from one market don't add up to
+  certainty about that market.
+- `riskAversion` comes from research settings (2 = half Kelly, set
+  2026-11-11); without it, the value that makes the policy mix optimal.
+- The projection draws an error in expected returns per path (1.5 points
+  common, 1-3 per sleeve, Pakistan largest); `driftSd: false` turns it off.
 
 Valuation design choices worth knowing before changing `valuation.js`:
 required return per market is calibrated to the median implied return of
@@ -169,6 +188,14 @@ absolute view); US listings of foreign companies are calibrated separately
 against their home market's USD return; unknown ROE (all of PSX) defaults to
 1.25x the market's CMA required return; PSX growth uses profit after tax, not
 EPS, because published PSX EPS isn't restated for splits.
+Earnings are normalised (`earningsYieldNormalised`: trailing and up to four
+earlier years, grown to today at 4% global / 10% PSX, averaged; applied as a
+multiple of trailing clamped to 0.25-2.5), and growth is not extrapolated
+when trailing earnings are over 1.5x normal: peak earnings (refiners and
+tankers in 2026) were the optimiser's largest error. PSX's expected real
+return carries a 3-point haircut (`realReturnHaircut` in
+`model_assumptions`): its realised dollar return has run well below its
+earnings yield (10.3% a year over 2016-2026 against about 12% expected).
 
 PSX corporate actions come from `lib/psxEvents.js`:
 - Sarmaaya's payouts have dated rows only from about 2023; its older rows are
