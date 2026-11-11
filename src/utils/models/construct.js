@@ -14,8 +14,19 @@
 import { monthlyReturns, ledoitWolf, annualise } from './risk.js';
 import { blackLitterman, impliedDelta, meanVariance, maxSharpe, riskParity, stats, dot } from './optimize.js';
 
-/** Default sleeves from the investment policy. */
+/**
+ * Default sleeves: the policy mix as the Black-Litterman reference (prior)
+ * only, with no bounds. Since 2026-11-11 the optimiser is an input to
+ * judgement, not the decision: it runs unconstrained by default, and bounds
+ * are passed per run when an alternative is wanted (POLICY_SLEEVES are the
+ * old 35-45 / 25-35 / 10-40 ranges).
+ */
 export const DEFAULT_SLEEVES = {
+  globalCore: { name: 'Global core (funds)', target: 0.4, min: 0, max: 1 },
+  globalStocks: { name: 'Global stocks', target: 0.3, min: 0, max: 1 },
+  pakistan: { name: 'Pakistan', target: 0.3, min: 0, max: 1 }
+};
+export const POLICY_SLEEVES = {
   globalCore: { name: 'Global core (funds)', target: 0.4, min: 0.35, max: 0.45 },
   globalStocks: { name: 'Global stocks', target: 0.3, min: 0.25, max: 0.35 },
   pakistan: { name: 'Pakistan', target: 0.3, min: 0.1, max: 0.4 }
@@ -206,7 +217,7 @@ export function constructPortfolio(p) {
     // region: a wide list sized for the future portfolio put 80% of the stock
     // sleeve in Japan. A level with one value in the sleeve (Pakistan's
     // region) has nothing to spread across, so it is skipped.
-    const levels = [['sector', p.sectorCap ?? 0.4], ['industry', p.industryCap ?? 0.25], ['region', p.regionCap ?? 0.5]]
+    const levels = [['sector', p.sectorCap ?? 1], ['industry', p.industryCap ?? 1], ['region', p.regionCap ?? 1]]
       .filter(([, c]) => c > 0 && c < 1)
       .filter(([field]) => new Set(g.idx.map((i) => assets[i][field]).filter(Boolean)).size > 1);
     if (!levels.length) continue;
@@ -318,7 +329,7 @@ export function constructPortfolio(p) {
     optimal = optimal.map((x) => (x < 1e-6 ? 0 : x));
     if (pruned) notes.push(`Recommended portfolio: ${pruned} position(s) below the ${(minPos * 100).toFixed(1)}% minimum were dropped and the rest re-optimised.`);
   }
-  if (capGroups.length) notes.push(`Concentration limits: no sector above ${Math.round((p.sectorCap ?? 0.4) * 100)}%, no industry above ${Math.round((p.industryCap ?? 0.25) * 100)}% and no market above ${Math.round((p.regionCap ?? 0.5) * 100)}% of a stock sleeve (${capGroups.length} limits binding on the candidates).`);
+  if (capGroups.length) notes.push(`Concentration limits: no sector above ${Math.round((p.sectorCap ?? 1) * 100)}%, no industry above ${Math.round((p.industryCap ?? 1) * 100)}% and no market above ${Math.round((p.regionCap ?? 1) * 100)}% of a stock sleeve (${capGroups.length} limits binding on the candidates).`);
   const minVar = meanVariance({ mu: null, S, lambda: 1, lower, upper, groups: allGroups, w0: wRef });
   const ms = maxSharpe({ mu: bl.mu, S, rf, lower, upper, groups: allGroups });
   const rp = riskParity({ S, lower, upper, groups: allGroups });

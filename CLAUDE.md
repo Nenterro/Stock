@@ -164,6 +164,11 @@ here, and `node --test test/*.test.js` in `~/Docker/stock-api`.
 a full run offline.
 
 Model choices made in the November 2026 review (change them knowingly):
+- Defaults are unconstrained (since 2026-11-11): `DEFAULT_SLEEVES` has the
+  policy mix as the Black-Litterman reference only, no bounds
+  (`POLICY_SLEEVES` keeps the old ranges), and the sector/industry/market
+  caps are off unless passed. The optimiser is an input to judgement; run it
+  several ways.
 - Mean-variance is solved by ADMM (OSQP-style, `admmQP`), finished with an
   exact projection; projected gradient with Dykstra is only the fallback. A
   full run with ~80 concentration limits went from 10+ minutes to ~2 s, with

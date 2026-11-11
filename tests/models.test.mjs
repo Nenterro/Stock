@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ledoitWolf, sampleCov, monthlyReturns } from '../src/utils/models/risk.js';
 import { project, meanVariance, blackLitterman, riskParity, stats, invert, matVec } from '../src/utils/models/optimize.js';
 import { projectPlan, stressTest, rng } from '../src/utils/models/simulate.js';
-import { constructPortfolio, assetView, dividendTaxRate } from '../src/utils/models/construct.js';
+import { constructPortfolio, assetView, dividendTaxRate, POLICY_SLEEVES } from '../src/utils/models/construct.js';
 
 const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} !== ${b}`);
 
@@ -135,7 +135,7 @@ test('construction end to end: weights valid, sleeves within bounds', () => {
     { symbol: 'G2', sleeve: 'globalStocks', currency: 'USD', history: hist(3), expected: 0.09, confidence: 0.3 },
     { symbol: 'PK1', sleeve: 'pakistan', currency: 'USD', history: hist(4), expected: 0.15, confidence: 0.3 }
   ];
-  const out = constructPortfolio({ assets, today: '2025-06-01', maxStockWeight: 0.35 });
+  const out = constructPortfolio({ assets, sleeves: POLICY_SLEEVES, today: '2025-06-01', maxStockWeight: 0.35 });
   for (const [key, pf] of Object.entries(out.portfolios)) {
     const sum = Object.values(pf.weights).reduce((a, b) => a + b, 0);
     close(sum, 1, 1e-6);
@@ -258,7 +258,7 @@ test('a sleeve with too few candidates is capped, not infeasible', () => {
     { symbol: 'P1', sleeve: 'pakistan', currency: 'USD', history: hist(3), expected: 0.12 },
     { symbol: 'P2', sleeve: 'pakistan', currency: 'USD', history: hist(4), expected: 0.12 }
   ];
-  const out = constructPortfolio({ assets, today: '2025-03-01', maxStockWeight: 0.1 });
+  const out = constructPortfolio({ assets, sleeves: POLICY_SLEEVES, today: '2025-03-01', maxStockWeight: 0.1 });
   const rec = out.portfolios.recommended;
   close(Object.values(rec.weights).reduce((a, b) => a + b, 0), 1, 1e-6);
   assert.ok(rec.sleeves.globalStocks <= 0.2 + 1e-6);
