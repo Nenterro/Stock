@@ -700,6 +700,30 @@ tool(
   }
 );
 
+tool(
+  'record_forward_test_weights',
+  {
+    title: 'Record forward-test weights',
+    description:
+      "Record the weights a forward-test portfolio holds from a date on (`System` = Claude's recommendation, `Optimiser` = raw model output). The monthly bookkeeping (mcp/automation/run.mjs) applies the latest weights recorded before each month ends. Record whenever the recommendation changes. Weights are fractions; CASH allowed.",
+    inputSchema: {
+      portfolio: z.enum(['System', 'Optimiser']),
+      weights: z.record(z.string(), z.number().min(0)),
+      from: z.string().optional().describe('YYYY-MM-DD, default today'),
+      note: z.string().optional()
+    }
+  },
+  async ({ portfolio, weights, from, note }) => {
+    const rows = await pf.research();
+    const cur = rows.find((r) => r.kind === 'forward_test' && r.symbol === '*')?.data || {};
+    const sum = Object.values(weights).reduce((a, b) => a + b, 0);
+    const w = Object.fromEntries(Object.entries(weights).map(([k, v]) => [k.toUpperCase(), v / (sum || 1)]));
+    const list = [...((cur.portfolios || {})[portfolio] || []).filter((x) => x.from !== (from || today())), { from: from || today(), weights: w, note: note || null }];
+    const saved = await upsertResearch('forward_test', '*', { portfolios: { ...(cur.portfolios || {}), [portfolio]: list } });
+    return ok({ portfolio, recorded: list.length, from: from || today(), saved: Boolean(saved) });
+  }
+);
+
 /* -------------------------------------------------------------------------- */
 /* Insights: Claude's analyses, shown in the app                              */
 /* -------------------------------------------------------------------------- */
