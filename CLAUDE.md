@@ -321,6 +321,36 @@ stocks: grade-A Shariah names went from 0 to 33 when it was connected.
   in an hour) are requeued by `retryTransientFailures`, which the daily top-up
   step runs.
 
+### Investment automation (`mcp/automation/`)
+
+Runs on the home server from cron (UTC), using the server's clone of this repo
+(`~/stock-tracker`, pulled nightly at 22:40) and its `mcp/.env`, which since
+November 2026 also holds the E2EE PIN and login session, so it can read the
+portfolio unattended. Transaction writes are off there.
+
+- `cron.sh <task>` runs `run.mjs` (plain code, no Claude):
+  - `alerts`: nightly 22:45.
+  - `models`: Saturday 23:30. Optimiser variants plus the next batch's
+    contribution plan.
+  - `bookkeeping`: the 1st at 06:00. Forward-test returns and ledger scoring.
+- `claude-task.sh <task>` runs one headless session per task, instructions in
+  `<TASK>.md`. Only one runs at a time, with only that task's tools:
+  - `watch`: nightly 23:15, Sonnet.
+  - `research`: Sunday 01:00, Opus.
+  - `pack`: Sunday 04:30, Opus.
+  - `audit`: every second Wednesday 01:00, Opus.
+- Outputs land in the app (Insights; research records `model_snapshot`,
+  `automation_state`, `forward_test`) and in the private Personal Investment
+  repository. That repository is a bare repo at `~/personal-investment.git` on
+  the server, with a working clone at `~/personal-investment`, and the
+  gitignored `Personal Investment/` folder here is another clone. Each run
+  pulls it before working and commits and pushes after; interactive sessions
+  pull at the start.
+- Logs: `~/stock-automation/logs/`. Cron backup before the entries:
+  `~/crontab.bak-20261112`.
+- `node mcp/automation/run.mjs <task> --dry --pi "<path>"` runs a task here
+  without writing anything.
+
 ### News and geopolitics
 
 `lib/news.js` in the backend collects 20 RSS feeds every hour and keeps 90
