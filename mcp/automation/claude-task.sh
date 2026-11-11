@@ -47,7 +47,8 @@ case "$task" in
   audit) TOOLS="$READ,$FILES,WebSearch,mcp__stock-tracker__save_insight,mcp__stock-tracker__run_job,mcp__stock-tracker__retry_statement,mcp__stock-tracker__set_watchlist,mcp__stock-tracker__set_note" ;;
 esac
 
-git -C "$pi" pull -q --ff-only >>"$log" 2>&1 || echo "$(date -Is) git pull failed" >>"$log"
+# --rebase: a run that could not push last time still has its commit locally.
+git -C "$pi" pull -q --rebase >>"$log" 2>&1 || echo "$(date -Is) git pull failed" >>"$log"
 
 PROMPT="You are running the scheduled '$task' task for the user's investment system, unattended. Read $here/automation/$TASK.md and follow it exactly. Today is $(date +%F). Your working directory is the user's Personal Investment records. End with one line: RESULT <one-sentence summary>."
 run() {
@@ -82,7 +83,8 @@ if [ -n "$(git -C "$pi" status --porcelain)" ]; then
   git -C "$pi" commit -q -m "Automated $task, $(date +%F)
 
 ${result:-no result line}" >>"$log" 2>&1
-  git -C "$pi" push -q >>"$log" 2>&1 || echo "$(date -Is) git push failed" >>"$log"
+  # Someone may have pushed while the session ran: rebase on top, then push.
+  { git -C "$pi" pull -q --rebase && git -C "$pi" push -q; } >>"$log" 2>&1 || echo "$(date -Is) git push failed" >>"$log"
 fi
 find "$work/logs" -name '*.log' -mtime +60 -delete
 exit 0

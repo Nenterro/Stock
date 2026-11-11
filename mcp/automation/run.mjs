@@ -99,7 +99,7 @@ function git(...a) {
 function piPull() {
   if (!existsSync(join(PI, '.git'))) return false;
   try {
-    git('pull', '-q', '--ff-only');
+    git('pull', '-q', '--rebase');
   } catch (e) {
     log(`git pull failed (working on the local copy): ${e.message.split('\n')[0]}`);
   }
@@ -112,6 +112,7 @@ function piCommit(message) {
     git('add', '-A');
     if (!git('status', '--porcelain')) return;
     git('commit', '-q', '-m', `${message}\n\nAutomated (mcp/automation/run.mjs ${task}).`);
+    git('pull', '-q', '--rebase');
     git('push', '-q');
   } catch (e) {
     log(`git commit/push failed: ${e.message.split('\n')[0]}`);
