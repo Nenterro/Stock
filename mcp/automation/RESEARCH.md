@@ -54,8 +54,11 @@ becomes affordable.
   - `needs-review`: a real open question, named in one line;
   - `rejected`: why, in one line.
 
-  Fill `triggers` with numbers (add-below price, trim weight, any debt limit)
-  and `review` with a date about three months on. Keep it under about 80
+  Fill `triggers` with numbers only, using the template's keys (`addBelow`,
+  `trimAbovePrice`, `trimAboveWeight`, `netDebtToEbitdaMax`): the nightly
+  alerts read them. Conditions in words ("revisit if...") go in the body, and
+  the one-line reason for a status goes in a `reason:` front-matter line. Set
+  `review` to a date about three months on. Keep it under about 80
   lines; numbers with dates and sources.
 - One `save_insight` per name, kind `stock-analysis`, with `verdict` (`buy`,
   `watch` or `avoid`) and `confidence`.
