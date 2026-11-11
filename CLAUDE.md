@@ -123,6 +123,26 @@ reported interest income over revenue for the same period, trailing 12
 months where Yahoo has the pair, else the latest annual, nothing older than
 24 months. Fetched with the monthly global fundamentals; all three ratios
 are `screen_stocks` filters.
+
+The same timeseries call brings trailing and annual net income, EPS and
+share counts for the earnings check (`lib/earningsCheck.js`). It runs in
+`mergeFundamentals`, before the scores, valuation and expected returns see
+the P/E:
+- one-off gains and charges (trailing net income over 1.5x or under 1/1.5x
+  the last annual, *and* far from the forward P/E in the same direction)
+  are normalised. Gains go to the higher of annual and forecast, charges to
+  the lower;
+- an EPS that disagrees with net income / shares is rescaled only when the
+  quote EPS is that statement EPS, the share count matches market cap /
+  price, the last annual passes the same test and the currencies match;
+  otherwise it is only flagged (`earningsFlags`), because bad Yahoo share
+  counts, dual share classes and Up-C structures make most mismatches
+  structural.
+
+The raw P/E stays in `peTTMReported` and the reason in `earningsCheck`.
+Counts are in the data-quality report (`earningsAdjusted`). After changing
+the stored figures, backfill with `POST /api/fundamentals-global/backfill-interest`
+(about 11 minutes) rather than waiting for the monthly run.
 FCF yield is left out for Financial Services (insurers' and banks' cash flow
 is customers' money) and above 50% (data errors); it feeds the value score.
 UK listings with no Yahoo profile (no sector, no industry) and "<name> Ord"
