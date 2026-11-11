@@ -222,7 +222,11 @@ export function constructPortfolio(p) {
   // constraint, so the recommended portfolio is pruned: solve, drop the
   // smallest positions under the floor, solve again, until none are left.
   const minPos = p.minPosition ?? 0;
-  const solveRecommended = (up) => meanVariance({ mu: bl.mu, S, lambda: delta, lower, upper: up, groups: allGroups, w0: wRef });
+  // The investor's own risk aversion, when given. `delta` is only what makes
+  // the policy mix optimal (about 3.5 in November 2026); it still sets the
+  // Black-Litterman prior. 1 = growth-optimal (Kelly), 2 = half Kelly.
+  const lambda = p.riskAversion > 0 ? p.riskAversion : delta;
+  const solveRecommended = (up) => meanVariance({ mu: bl.mu, S, lambda, lower, upper: up, groups: allGroups, w0: wRef });
   let up = [...upper];
   let optimal = solveRecommended(up);
   let pruned = 0;
@@ -274,7 +278,8 @@ export function constructPortfolio(p) {
     asOf: rets.months[rets.months.length - 1],
     months: rets.R.length,
     riskFree: rf,
-    riskAversion: delta,
+    riskAversion: lambda,
+    riskAversionImpliedByPolicy: delta,
     covariance: { shrinkage: lw.intensity, averageCorrelation: lw.avgCorrelation },
     assets: assets.map((a, i) => ({
       symbol: a.symbol,

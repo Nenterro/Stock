@@ -387,10 +387,11 @@ tool(
       industryCap: z.number().min(0).max(1).default(0.25).describe('Max share of a stock sleeve in one industry (1 = off)'),
       regionCap: z.number().min(0).max(1).default(0.5).describe('Max share of the global stock sleeve in one market, e.g. Japan (1 = off)'),
       minPositionUsd: z.number().min(0).default(150).describe('Smallest holding in the recommended portfolio, USD (0 = off): smaller ones are dropped and the rest re-optimised'),
+      riskAversion: z.number().min(0.5).max(10).optional().describe('The investor's own risk aversion for the recommended portfolio: 1 = growth-optimal (Kelly), 2 = half Kelly, higher = safer. Default: the value implied by the policy mix (about 3.5)'),
       investNow: z.number().min(0).default(0).describe('New money to plan for, USD: the minimum position is sized against the portfolio after it goes in. Income grows, so evaluate at the size the portfolio is heading for (e.g. 12 months of contributions), not today\'s')
     }
   },
-  async ({ extraSymbols, useResearch, monthly, contributionGrowth, years, maxStockWeight, rf, sleeves, comparePakistan, sectorCap, industryCap, regionCap, minPositionUsd, investNow }) => {
+  async ({ extraSymbols, useResearch, monthly, contributionGrowth, years, maxStockWeight, rf, sleeves, comparePakistan, sectorCap, industryCap, regionCap, minPositionUsd, investNow, riskAversion }) => {
     const pos = await pf.positions({ currency: 'USD' });
     let extra = [...extraSymbols];
     const rows = await pf.research();
@@ -409,7 +410,7 @@ tool(
         screenerRow: (s) => api.screenerRow(s)
       }
     });
-    const base = { ...inputs, holdings: pos.holdings, fxSeries, rf, maxStockWeight, monthly, contributionGrowth, years, sectorCap, industryCap, regionCap, minPositionUsd, investNow };
+    const base = { ...inputs, holdings: pos.holdings, fxSeries, rf, maxStockWeight, monthly, contributionGrowth, years, sectorCap, industryCap, regionCap, minPositionUsd, investNow, riskAversion };
     const result = runModels({ ...base, sleeves: sleeves ? { ...DEFAULT_SLEEVES, ...sleeves } : undefined });
 
     let pakistanComparison;

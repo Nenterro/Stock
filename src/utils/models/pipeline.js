@@ -126,6 +126,7 @@ export function runModels(p) {
     sectorCap: p.sectorCap,
     industryCap: p.industryCap,
     regionCap: p.regionCap,
+    riskAversion: p.riskAversion,
     minPosition: p.minPositionUsd > 0 && base > 0 ? Math.min(p.minPositionUsd / base, p.maxStockWeight ?? 0.1) : p.minPosition,
     today: p.today
   });
