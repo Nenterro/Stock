@@ -152,7 +152,9 @@ function readTheses() {
 // Islamic-style). The thesis check is still Claude's: this only keeps
 // obvious non-starters out of the automated runs.
 const EXCLUDED_INDUSTRY = /tobacco|winer|distill|brewer|gambling|casino|lodging|aerospace & defense|entertainment|banks|insurance|asset management|capital markets|credit services|mortgage|financial conglomerates|shell companies/i;
-const CORE_FUNDS = ['ISWD', 'ISDE', 'ISDU', 'IGDA', 'UMMA', 'SPUS', 'HLAL', 'MZNPETF'];
+// Core funds, plus the asset classes with their own assumptions (gold: RMAU.L
+// in USD, the Meezan Gold Fund in PKR; sukuk: HSKD.L).
+const CORE_FUNDS = ['ISWD', 'ISDE', 'ISDU', 'IGDA', 'UMMA', 'SPUS', 'HLAL', 'MZNPETF', 'RMAU.L', 'MGF.7E5920', 'HSKD.L'];
 
 async function candidates(holdings, rows) {
   const held = holdings.map((h) => h.ticker);

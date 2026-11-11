@@ -16,6 +16,13 @@ export const DEFAULT_CORE = ['ISWD', 'ISDU', 'ISDE'];
 /** Market proxies used to complete short histories and for stress tests. */
 export const PROXIES = { PKR: 'KSE100TR', USD: '^GSPC' };
 
+/**
+ * Proxies for young funds outside equities: completing a sukuk fund's early
+ * months with the S&P 500 would make it look like a stock fund. HSKD (listed
+ * January 2025) borrows the older US-listed sukuk ETF's history.
+ */
+export const ASSET_PROXIES = { 'HSKD.L': 'SPSK' };
+
 const FUND_HINT = /etf|fund|ucits|trust|shares/i;
 
 /**
@@ -35,7 +42,8 @@ export async function buildInputs(p) {
   await Promise.all(symbols.map(async (s) => (rows[s] = await p.fetchers.screenerRow(s).catch(() => null))));
   const kindOf = (s) => rows[s]?.kind || (FUND_HINT.test(rows[s]?.name || p.holdings?.find((h) => h.ticker === s)?.name || '') ? 'etf' : 'stock');
 
-  const histories = await p.fetchers.histories([...symbols, ...Object.values(PROXIES)]);
+  const assetProxies = [...new Set(symbols.map((s) => ASSET_PROXIES[s]).filter(Boolean))];
+  const histories = await p.fetchers.histories([...symbols, ...Object.values(PROXIES), ...assetProxies]);
   const currencyOf = (s) => String(histories[s]?.currency || rows[s]?.currency || p.holdings?.find((h) => h.ticker === s)?.nativeCurrency || 'USD').toUpperCase();
 
   const hasCoreFund = symbols.some((s) => sleeveOf({ kind: kindOf(s), currency: currencyOf(s) }) === 'globalCore');
@@ -49,6 +57,10 @@ export async function buildInputs(p) {
   }
 
   const er = await p.fetchers.expectedReturns().catch(() => null);
+  // Funds with their own expected-return assumptions (gold, sukuk) are funds
+  // even without a screener row, so they sit in the fund sleeve and aren't
+  // held to the single-stock cap.
+  const assumedFunds = new Set((er?.funds || []).filter((f) => f.assetClass).map((f) => f.symbol));
   const assets = [];
   const excluded = [];
   for (const s of symbols) {
@@ -64,7 +76,7 @@ export async function buildInputs(p) {
       continue;
     }
     const currency = currencyOf(s);
-    const kind = rows[s]?.kind || kindOf(s);
+    const kind = assumedFunds.has(s) ? 'etf' : rows[s]?.kind || kindOf(s);
     const view = assetView({
       symbol: s,
       kind,
@@ -82,7 +94,7 @@ export async function buildInputs(p) {
       kind,
       currency: currency === 'PKR' ? 'PKR' : 'USD', // non-USD listings arrive converted to USD
       history: h.history,
-      proxy: PROXIES[currency === 'PKR' ? 'PKR' : 'USD'],
+      proxy: ASSET_PROXIES[s] || PROXIES[currency === 'PKR' ? 'PKR' : 'USD'],
       expected: view?.expected ?? null,
       confidence: view?.confidence ?? 0.2,
       source: view?.source || null,
@@ -96,7 +108,7 @@ export async function buildInputs(p) {
       region: rows[s]?.region ?? null
     });
   }
-  const proxies = Object.fromEntries(Object.values(PROXIES).filter((s) => histories[s]).map((s) => [s, histories[s]]));
+  const proxies = Object.fromEntries([...Object.values(PROXIES), ...assetProxies].filter((s) => histories[s]).map((s) => [s, histories[s]]));
   // Stress windows reach back to 2007: the full (coarser) proxy series.
   const long = await p.fetchers.histories(Object.values(PROXIES), 'all').catch(() => ({}));
   const proxiesLong = Object.fromEntries(Object.values(PROXIES).map((s) => [s, long[s]?.history?.length ? long[s] : proxies[s]]).filter(([, v]) => v));
