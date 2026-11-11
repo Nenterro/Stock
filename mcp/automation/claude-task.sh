@@ -6,7 +6,9 @@
 # server and only the tools that task needs. Instructions:
 # mcp/automation/<TASK>.md. Logs: ~/stock-automation/logs/claude-<task>-<date>.log.
 #
-#   <TASK>_MODEL   overrides the model, e.g. AUDIT_MODEL=claude-opus-5-5
+#   <TASK>_MODEL     overrides the model, e.g. AUDIT_MODEL=claude-opus-5-5
+#   RESEARCH_NAMES   names per research run (default 1: one a night, so no
+#                    single 5-hour usage window carries the whole week)
 set -uo pipefail
 export PATH="$HOME/.local/node/bin:$HOME/.local/bin:$PATH"
 here="$(cd "$(dirname "$0")/.." && pwd)" # mcp/
@@ -24,7 +26,7 @@ export PERSONAL_INVESTMENT_DIR="$pi"
 # Models: Opus where judgement matters, Sonnet for the nightly watch.
 case "$task" in
   watch) default_model="claude-sonnet-5-5"; minutes=30 ;;
-  research) default_model="claude-opus-5-5"; minutes=120 ;;
+  research) default_model="claude-opus-5-5"; minutes=45 ;;
   pack) default_model="claude-opus-5-5"; minutes=90 ;;
   audit) default_model="claude-opus-5-5"; minutes=120 ;;
   *) echo "unknown task $task" >>"$log"; exit 2 ;;
@@ -50,7 +52,11 @@ esac
 # --rebase: a run that could not push last time still has its commit locally.
 git -C "$pi" pull -q --rebase >>"$log" 2>&1 || echo "$(date -Is) git pull failed" >>"$log"
 
-PROMPT="You are running the scheduled '$task' task for the user's investment system, unattended. Read $here/automation/$TASK.md and follow it exactly. Today is $(date +%F). Your working directory is the user's Personal Investment records. End with one line: RESULT <one-sentence summary>."
+extra=""
+if [ "$task" = research ]; then
+  extra=" Research at most ${RESEARCH_NAMES:-1} name(s) this run (this replaces the 5 in 'Choose up to 5 names'): the week is spread over nightly runs."
+fi
+PROMPT="You are running the scheduled '$task' task for the user's investment system, unattended. Read $here/automation/$TASK.md and follow it exactly. Today is $(date +%F). Your working directory is the user's Personal Investment records.$extra End with one line: RESULT <one-sentence summary>."
 run() {
   cd "$pi" && timeout $((minutes * 60)) claude -p "$PROMPT" \
     --model "$MODEL" \
@@ -61,11 +67,15 @@ run() {
 echo "$(date -Is) start: model $MODEL" >>"$log"
 out="$(run)"
 code=$?
-# Usage limit: wait for the reset (up to 6 hours) and try once more.
-t="$(grep -oE 'resets [0-9]{1,2}(:[0-9]{2})?(am|pm) \(UTC\)' <<<"$out" | head -1 | awk '{print $2}')"
+# Usage limit: the 5-hour window ("resets 1:10am (UTC)") or the weekly one
+# ("resets Nov 18, 8am (UTC)"). Wait for the reset if it is under 6 hours
+# away, and try once more.
+t="$(grep -oE 'resets ([A-Z][a-z]{2} [0-9]{1,2}, )?[0-9]{1,2}(:[0-9]{2})?(am|pm) \(UTC\)' <<<"$out" | head -1 | sed -E 's/^resets //; s/ \(UTC\)$//; s/,//')"
 if [ -n "$t" ] && ! grep -q 'RESULT ' <<<"$out"; then
-  target="$(date -u -d "today $t" +%s)"
-  [ "$target" -le "$(date +%s)" ] && target=$((target + 86400))
+  case "$t" in
+    [A-Z]*) target="$(date -u -d "$t" +%s)" ;; # dated: the weekly reset
+    *) target="$(date -u -d "today $t" +%s)"; [ "$target" -le "$(date +%s)" ] && target=$((target + 86400)) ;;
+  esac
   if [ $((target - $(date +%s))) -lt 21600 ]; then
     echo "$(date -Is) usage limit; waiting until $t UTC" >>"$log"
     sleep $((target - $(date +%s) + 120))
