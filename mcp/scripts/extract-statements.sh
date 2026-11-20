@@ -20,7 +20,7 @@ MODEL="${STATEMENTS_MODEL:-sonnet}"
 # Wait out a usage-limit reset for up to this many hours.
 stop_at=$(( $(date +%s) + ${STATEMENTS_HOURS:-4} * 3600 ))
 API="${STOCK_API_LOCAL:-http://localhost:3005}"
-export STOCK_API_URL="${STOCK_API_URL:-$API,https://huz-stock.duckdns.org:8888}"
+export STOCK_API_URL="${STOCK_API_URL:-$API,https://stock-api.huzaifa.page,https://huz-stock.duckdns.org:8888}"
 export STOCK_API_HOST_DATA="${STOCK_API_HOST_DATA:-$HOME/Docker/stock-api/data}"
 export EXTRACTOR_NAME="claude-code-cron"
 

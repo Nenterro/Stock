@@ -11,7 +11,7 @@ export PATH="$HOME/.local/node/bin:$HOME/.local/bin:$PATH"
 here="$(cd "$(dirname "$0")/.." && pwd)" # mcp/
 MODEL="${NEWS_MODEL:-sonnet}"
 API="${STOCK_API_LOCAL:-http://localhost:3005}"
-export STOCK_API_URL="${STOCK_API_URL:-$API,https://huz-stock.duckdns.org:8888}"
+export STOCK_API_URL="${STOCK_API_URL:-$API,https://stock-api.huzaifa.page,https://huz-stock.duckdns.org:8888}"
 export EXTRACTOR_NAME="claude-code-cron"
 
 work="$HOME/stock-news"

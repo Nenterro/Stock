@@ -20,7 +20,7 @@ HOURS="${ARCHIVE_HOURS:-6}"
 stop_at=$(( $(date +%s) + HOURS * 3600 ))
 MODEL="${ARCHIVE_MODEL:-sonnet}"
 API="${STOCK_API_LOCAL:-http://localhost:3005}"
-export STOCK_API_URL="${STOCK_API_URL:-$API,https://huz-stock.duckdns.org:8888}"
+export STOCK_API_URL="${STOCK_API_URL:-$API,https://stock-api.huzaifa.page,https://huz-stock.duckdns.org:8888}"
 export STOCK_API_HOST_DATA="${STOCK_API_HOST_DATA:-$HOME/Docker/stock-api/data}"
 export EXTRACTOR_NAME="claude-code-cron"
 

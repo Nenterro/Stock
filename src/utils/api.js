@@ -2,8 +2,8 @@
 export const getBackendUrls = () => {
   const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
   const candidateUrls = [
+    'https://stock-api.huzaifa.page',
     'https://huz-stock.duckdns.org:8888',
-    'http://192.168.18.49:3005',
     `http://${currentHost}:3005`,
     `http://${currentHost}:8888`,
     'http://localhost:3005'

@@ -2,13 +2,15 @@ import PocketBase from 'pocketbase';
 import * as db from './db';
 import { encryptPayload, decryptPayload, isUnlocked } from '../utils/crypto';
 
+// Cloudflare Tunnel first: it works whichever internet line the home server is
+// on. DuckDNS only answers while the primary line (with port forwarding) is up.
 export const PB_URLS = [
+  'https://budget-api.huzaifa.page',
   'https://huz-budget.duckdns.org:8888',
-  'https://huz-budget.duckdns.org',
-  'http://192.168.18.49:8090'
+  'https://huz-budget.duckdns.org'
 ];
 
-export const pb = new PocketBase('https://huz-budget.duckdns.org:8888');
+export const pb = new PocketBase(PB_URLS[0]);
 
 export async function checkUrl(url) {
   try {
@@ -44,7 +46,7 @@ export async function connectPocketBase() {
   // Nothing answered. Leave a sane default on the client for later retries,
   // but report the failure rather than returning a URL that does not work -
   // callers were treating any return value as "connected".
-  pb.baseUrl = 'https://huz-budget.duckdns.org:8888';
+  pb.baseUrl = PB_URLS[0];
   return null;
 }
 

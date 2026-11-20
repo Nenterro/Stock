@@ -26,9 +26,9 @@ const list = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
 
 export const config = {
   // LAN fallbacks, if wanted, go in mcp/.env: this file is public.
-  stockApiUrls: list(env('STOCK_API_URL', 'https://huz-stock.duckdns.org:8888')),
+  stockApiUrls: list(env('STOCK_API_URL', 'https://stock-api.huzaifa.page,https://huz-stock.duckdns.org:8888')),
   stockApiToken: env('STOCK_API_WRITE_TOKEN'),
-  pbUrls: list(env('PB_URL', 'https://huz-budget.duckdns.org:8888')),
+  pbUrls: list(env('PB_URL', 'https://budget-api.huzaifa.page,https://huz-budget.duckdns.org:8888')),
   pbEmail: env('PB_EMAIL'),
   pbPassword: env('PB_PASSWORD'),
   pin: env('E2EE_PIN'),
