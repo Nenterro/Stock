@@ -17,6 +17,7 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { SettingsProvider } from './context/SettingsContext'
 import { AuthProvider } from './context/AuthContext'
 import { DataProvider } from './context/DataContext'
+import { clearBadgeWhenOpen } from './utils/push'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -31,6 +32,8 @@ createRoot(document.getElementById('root')).render(
     </ErrorBoundary>
   </StrictMode>,
 )
+
+clearBadgeWhenOpen()
 
 // Register the service worker so the app launches from the home screen and
 // survives a cold start without a network. Dev is left alone: a cached shell

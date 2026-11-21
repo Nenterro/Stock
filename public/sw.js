@@ -12,9 +12,12 @@
  *   - Everything else (prices, PocketBase, any cross-origin request): passed
  *     straight through. Caching a quote or a sync response would show stale
  *     money, which is worse than showing none.
+ *
+ * It also shows push notifications sent by the home server's push hub (see
+ * src/utils/push.js) and opens the app at the right page when one is tapped.
  */
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `shell-${VERSION}`;
 const ASSET_CACHE = `assets-${VERSION}`;
 
@@ -109,4 +112,46 @@ self.addEventListener('fetch', (event) => {
 // Lets the page trigger an immediate update rather than waiting for a restart.
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// Push. Every push must show a notification: iOS withdraws the subscription
+// from an app that receives pushes silently.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : '' };
+  }
+  event.waitUntil(
+    (async () => {
+      await self.registration.showNotification(data.title || 'Stock Tracker', {
+        body: data.body || '',
+        tag: data.tag,
+        icon: '/pwa-192.png',
+        data: { url: data.url || '/' }
+      });
+      if (typeof data.badge === 'number' && self.navigator.setAppBadge) {
+        await self.navigator.setAppBadge(data.badge).catch(() => {});
+      }
+    })()
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of windows) {
+        if ('focus' in client) {
+          await client.focus();
+          if ('navigate' in client) await client.navigate(url).catch(() => {});
+          return;
+        }
+      }
+      await self.clients.openWindow(url);
+    })()
+  );
 });

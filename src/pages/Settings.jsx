@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Shield, Briefcase, ChevronRight, LogOut, LogIn, RefreshCw, Upload, Download, Server, Mail, Wallet } from 'lucide-react';
+import { Shield, Briefcase, ChevronRight, LogOut, LogIn, RefreshCw, Upload, Download, Server, Mail, Wallet, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Settings() {
@@ -136,6 +136,23 @@ export default function Settings() {
           </h3>
           
           <div className="settings-list glass-panel" style={{ borderRadius: '16px', overflow: 'hidden' }}>
+            <div
+              className="settings-item"
+              onClick={() => navigate('/settings/notifications')}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+                  <Bell size={20} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '16px', fontWeight: '500' }}>Notifications</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Alerts, price moves and new analyses</span>
+                </div>
+              </div>
+              <ChevronRight size={20} style={{ color: 'var(--text-secondary)' }} />
+            </div>
+
             <div 
               className="settings-item" 
               onClick={() => navigate('/settings/network')} 

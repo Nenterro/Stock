@@ -23,6 +23,7 @@ import KtradeImport from './pages/KtradeImport';
 import BudgetDividendImport from './pages/BudgetDividendImport';
 import Login from './pages/Login';
 import NetworkSettings from './pages/NetworkSettings';
+import NotificationSettings from './pages/NotificationSettings';
 import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="settings/security" element={<SecuritySettings />} />
           <Route path="settings/portfolios" element={<PortfoliosSettings />} />
           <Route path="settings/network" element={<NetworkSettings />} />
+          <Route path="settings/notifications" element={<NotificationSettings />} />
         </Route>
       </Routes>
     </BrowserRouter>
