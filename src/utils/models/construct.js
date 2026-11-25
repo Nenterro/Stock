@@ -65,8 +65,11 @@ export function dividendTaxRate({ symbol, kind, currency, country }) {
 }
 
 // How far a stock's own valuation moves its view off its market: single-stock
-// estimates are noisy, so they inform the view without dominating it.
-const VALUE_WEIGHT = 0.4;
+// estimates are noisy, so they inform the view without dominating it. 0.4 is
+// a prior; once the prediction archive has enough history, each market's
+// measured calibration slope moves it (calibratedValueWeight).
+export const VALUE_WEIGHT = 0.4;
+const VALUE_WEIGHT_PRIOR_SD = 0.2;
 // Largest tilt from the non-value factor scores (quality, momentum, growth,
 // low risk), at a percentile of 0 or 1. Documented long-short premia on these
 // factors are a few percent a year; a long-only percentile is worth less.
@@ -77,22 +80,108 @@ const FACTOR_WEIGHTS = { quality: 0.25, momentum: 0.2, growth: 0.15, lowRisk: 0.
 export const MARKET_VIEW_SD = 0.03;
 
 /**
+ * How far a stock's valuation can be trusted, as a multiplier (0.1-1) on its
+ * view confidence, with the reasons. Added November 2026: the optimiser's
+ * largest picks were mostly its largest errors (peak-cycle earnings, data
+ * problems), because a tanker at peak profits with complete data was trusted
+ * as much as a steady compounder. Research verdicts count too.
+ *
+ *   earnings variability  year-to-year swing in profit (CV): 1 up to 0.15,
+ *                         falling to 0.35 at 0.6 and above (a loss year = 1)
+ *   peak earnings         trailing over 1.5x normal: x0.5; over 1.25x: x0.75
+ *   earnings flags        EPS inconsistent with net income: x0.7
+ *   falling estimates     next year's EPS forecast down 10%+ in 90 days: x0.8
+ *   research              needs-review: x0.5; industry at a cyclical peak
+ *                         (a thesis said so): x0.5
+ * A thesis's own return estimate replaces the model's valuation, and skips
+ * the earnings checks: research has already normalised the earnings.
+ */
+export function reliability(a) {
+  const reasons = [];
+  let k = 1;
+  const r = a.research || {};
+  if (r.impliedReturn == null) {
+    const cv = a.earningsCv;
+    if (cv != null) {
+      const f = cv <= 0.15 ? 1 : cv >= 0.6 ? 0.35 : 1 - ((cv - 0.15) / 0.45) * 0.65;
+      if (f < 1) {
+        k *= f;
+        reasons.push(`earnings variability ${cv.toFixed(2)} (x${f.toFixed(2)})`);
+      }
+    }
+    const n = a.normalisation;
+    if (n != null && n < 1 / 1.5) {
+      k *= 0.5;
+      reasons.push(`trailing earnings ${(1 / n).toFixed(1)}x normal (x0.5)`);
+    } else if (n != null && n < 0.8) {
+      k *= 0.75;
+      reasons.push(`trailing earnings ${(1 / n).toFixed(2)}x normal (x0.75)`);
+    }
+    if (a.earningsFlags?.length) {
+      k *= 0.7;
+      reasons.push('earnings data flagged (x0.7)');
+    }
+    if (a.epsRevision90d != null && a.epsRevision90d <= -0.1) {
+      k *= 0.8;
+      reasons.push(`EPS estimate ${Math.round(a.epsRevision90d * 100)}% in 90 days (x0.8)`);
+    }
+  }
+  if (r.status === 'needs-review') {
+    k *= 0.5;
+    reasons.push('research: needs review (x0.5)');
+  }
+  if (r.peakIndustry && !['ready', 'holding'].includes(r.status)) {
+    k *= 0.5;
+    reasons.push(`research: ${r.peakIndustry} at a cyclical peak (x0.5)`);
+  }
+  return { factor: Math.max(0.1, k), reasons };
+}
+
+/**
+ * How much of a stock's valuation gap to believe in one market: the prior
+ * (VALUE_WEIGHT, sd 0.2) updated with the calibration slope measured by the
+ * prediction archive (backend lib/predictions.js), from the longest horizon
+ * with at least three independent periods. Between 0 and 0.7.
+ * @returns {{ weight: number, source: string }}
+ */
+export function calibratedValueWeight(signalQuality, marketKey) {
+  const prior = { weight: VALUE_WEIGHT, source: 'prior (no measured calibration yet)' };
+  if (!signalQuality?.horizons) return prior;
+  for (const h of ['12m', '6m', '3m']) {
+    const m = signalQuality.horizons[h]?.markets?.[marketKey];
+    const c = m?.calibration;
+    if (!c || !(c.se > 0) || (m.independentPeriods ?? 0) < 3) continue;
+    const pp = 1 / VALUE_WEIGHT_PRIOR_SD ** 2;
+    const pd = 1 / c.se ** 2;
+    const w = (VALUE_WEIGHT * pp + c.slope * pd) / (pp + pd);
+    return { weight: Math.max(0, Math.min(0.7, w)), source: `prior 0.4 updated with the ${h} calibration slope ${c.slope.toFixed(2)} (se ${c.se.toFixed(2)}, ${m.independentPeriods} periods)` };
+  }
+  return prior;
+}
+
+/**
  * Expected USD return (after dividend tax withheld at source) and view
  * confidence for one asset, from the backend's models.
  *   funds:  the fund's own CMA (earnings yield, fee-adjusted)
  *   stocks: market return
- *           + 40% of the gap between the stock's valuation implied return
- *             (normalised earnings, in USD) and its market
- *           + a tilt of up to +/-2.5 points from its quality, momentum, growth
- *             and low-risk scores (value is already in the implied return)
+ *           + the value weight (0.4 until measured) x the gap between the
+ *             stock's implied return (normalised earnings, in USD; or a
+ *             research thesis's own estimate) and its market
+ *           + a tilt of up to +/-2.5 points from its quality, momentum
+ *             (price and estimate revisions), growth and low-risk scores
  *   both:   less dividend yield x withholding rate
+ * Confidence: data coverage x reliability() (earnings stability, peaks,
+ * flags, revisions, research verdicts).
  * `group` names the market the view leans on, for the shared-error term.
  *
  * @param {Object} a   { symbol, kind, currency, region, country, impliedReturn (local),
- *                       scoreCoverage, scores, dividendYield }
+ *                       scoreCoverage, scores, dividendYield, earningsCv,
+ *                       normalisation, earningsFlags, epsRevision90d,
+ *                       research: { status, impliedReturn, peakIndustry } }
  * @param {Object} er  /api/models/expected-returns payload
+ * @param {Object} [opts]  { signalQuality: /api/models/signal-quality payload }
  */
-export function assetView(a, er) {
+export function assetView(a, er, opts = {}) {
   if (!er) return null;
   const taxDrag = Math.max(0, a.dividendYield || 0) * dividendTaxRate(a);
   const fund = er.funds?.find((f) => f.symbol === a.symbol);
@@ -108,20 +197,26 @@ export function assetView(a, er) {
   const wSum = present.reduce((s, [, w]) => s + w, 0);
   const factor = present.length >= 2 ? present.reduce((s, [k, w]) => s + w * f[k], 0) / wSum : null;
   const tilt = factor != null ? (factor - 0.5) * FACTOR_TILT : 0;
+  const rel = reliability(a);
 
-  if (a.impliedReturn == null) {
-    return { expected: marketUsd + tilt - taxDrag, confidence: 0.2, source: `${market.name} market return (no stock estimate)`, taxDrag, tilt, group: market.key };
+  const thesis = a.research?.impliedReturn;
+  const implied = thesis ?? a.impliedReturn;
+  if (implied == null) {
+    return { expected: marketUsd + tilt - taxDrag, confidence: Math.max(0.03, 0.2 * rel.factor), source: `${market.name} market return (no stock estimate)`, taxDrag, tilt, group: market.key, reliability: rel };
   }
-  const usd = (1 + a.impliedReturn) / (1 + (market.depreciationVsUsd || 0)) - 1;
+  const usd = (1 + implied) / (1 + (market.depreciationVsUsd || 0)) - 1;
   const capped = Math.max(-0.2, Math.min(0.4, usd));
   const coverage = a.scoreCoverage ?? 0.5;
+  const vw = calibratedValueWeight(opts.signalQuality, market.key);
   return {
-    expected: marketUsd + VALUE_WEIGHT * (capped - marketUsd) + tilt - taxDrag,
-    confidence: Math.max(0.1, 0.35 * coverage + 0.1),
-    source: 'market return + valuation (normalised earnings) + factor scores, after dividend tax',
+    expected: marketUsd + vw.weight * (capped - marketUsd) + tilt - taxDrag,
+    confidence: Math.max(0.03, (0.35 * coverage + 0.1) * rel.factor),
+    source: thesis != null ? 'market return + research thesis estimate + factor scores, after dividend tax' : 'market return + valuation (normalised earnings) + factor scores, after dividend tax',
     taxDrag,
     tilt,
-    group: market.key
+    group: market.key,
+    reliability: rel,
+    valueWeight: vw
   };
 }
 
@@ -360,6 +455,8 @@ export function constructPortfolio(p) {
       viewSource: a.source || null,
       dividendTax: a.taxDrag ?? null,
       factorTilt: a.tilt ?? null,
+      reliability: a.reliability ?? null,
+      valueWeight: a.valueWeight?.weight ?? null,
       prior: bl.prior[i],
       posterior: bl.mu[i],
       filledMonths: rets.filled[a.symbol] || 0

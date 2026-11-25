@@ -37,6 +37,9 @@ yourself rather than trusting the numbers quoted in it.
    it would otherwise go to (ISWD/ISDE for global names, MZNPETF for PSX)?
    The thesis must give a reason this stock beats that, not only that it is
    good.
+6. **The return estimate.** If the thesis sets `impliedReturn`, is it on
+   recurring earnings, in local currency, and consistent with the numbers?
+   The optimiser uses it in place of its own valuation.
 
 ## Verdict
 

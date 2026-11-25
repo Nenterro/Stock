@@ -18,6 +18,7 @@ import { z } from 'zod';
 
 import { config, ENV_FILE } from './lib/config.js';
 import { api } from './lib/api.js';
+import { researchInput } from './lib/theses.js';
 import * as store from './lib/store.js';
 import * as pf from './lib/portfolio.js';
 import { planContribution } from '../src/utils/portfolio_analytics.js';
@@ -373,6 +374,7 @@ tool(
     inputSchema: {
       extraSymbols: z.array(z.string()).default([]).describe('More candidates to consider, e.g. ideas from screen_stocks'),
       useResearch: z.boolean().default(true).describe('Include planner targets and watchlist as candidates'),
+      applyResearch: z.boolean().default(true).describe('Apply research verdicts from the Personal Investment theses: rejected names left out until their review date, needs-review and peak-cycle industries trusted less, a thesis impliedReturn used in place of the model valuation'),
       monthly: z.number().default(2500).describe('Monthly contribution in USD for the projection'),
       contributionGrowth: z.number().default(0.05).describe('Annual growth of the contribution'),
       years: z.number().int().min(1).max(40).default(10),
@@ -391,7 +393,7 @@ tool(
       investNow: z.number().min(0).default(0).describe('New money to plan for, USD: the minimum position is sized against the portfolio after it goes in. Income grows, so evaluate at the size the portfolio is heading for (e.g. 12 months of contributions), not today\'s')
     }
   },
-  async ({ extraSymbols, useResearch, monthly, contributionGrowth, years, maxStockWeight, rf, sleeves, comparePakistan, sectorCap, industryCap, regionCap, minPositionUsd, investNow, riskAversion }) => {
+  async ({ extraSymbols, useResearch, applyResearch, monthly, contributionGrowth, years, maxStockWeight, rf, sleeves, comparePakistan, sectorCap, industryCap, regionCap, minPositionUsd, investNow, riskAversion }) => {
     const pos = await pf.positions({ currency: 'USD' });
     let extra = [...extraSymbols];
     const rows = await pf.research();
@@ -403,13 +405,19 @@ tool(
       extra.push(...Object.keys(rows.find((r) => r.kind === 'targets')?.data?.targets || {}));
     }
     const fxSeries = await api.fxSeries();
+    // Research verdicts from the Personal Investment theses, when the folder
+    // is on this machine (lib/theses.js): rejected names out, needs-review
+    // and peak-cycle industries trusted less, thesis estimates used.
+    const research = applyResearch ? await researchInput(async (s) => (await api.screenerRow(s))?.industry).catch(() => null) : null;
     const inputs = await buildInputs({
       holdings: pos.holdings,
       extraSymbols: extra,
+      research: research?.dir ? research : undefined,
       fetchers: {
         histories: (syms, range = '10y') => api.historyBatch(syms, range),
         expectedReturns: () => api.expectedReturns(),
-        screenerRow: (s) => api.screenerRow(s)
+        screenerRow: (s) => api.screenerRow(s),
+        signalQuality: () => api.signalQuality()
       }
     });
     const base = { ...inputs, holdings: pos.holdings, fxSeries, rf, maxStockWeight, monthly, contributionGrowth, years, sectorCap, industryCap, regionCap, minPositionUsd, investNow, riskAversion };
@@ -477,6 +485,20 @@ tool(
     inputSchema: { id: z.string() }
   },
   async ({ id }) => ok(await api.retryStatement(id))
+);
+
+tool(
+  'get_signal_quality',
+  {
+    title: 'Do the model signals predict returns?',
+    description: 'Scores of the archived weekly predictions (every stock, since 2026-11-25) against what happened, per market and horizon (1m, 3m, 6m, 12m): rank IC and t-stat per signal (impliedReturn, upside, score, value, quality, growth, momentum, lowRisk, epsRevision90d, revisionBreadth), top-minus-bottom quintile return a year, the calibration slope of the implied return (how much of the valuation gap came true; the optimiser value weight moves toward it once there are 3+ independent periods), and whether the implied return predicts better for stable than volatile or peak earnings. Judge with the t-stat and number of independent periods: one month of results is noise.',
+    inputSchema: { horizon: z.enum(['1m', '3m', '6m', '12m']).optional().describe('Only this horizon') }
+  },
+  async ({ horizon }) => {
+    const sq = await api.signalQuality();
+    if (horizon && sq?.horizons) return ok({ ...sq, horizons: { [horizon]: sq.horizons[horizon] ?? null } });
+    return ok(sq);
+  }
 );
 
 tool(

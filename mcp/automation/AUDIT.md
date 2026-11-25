@@ -37,7 +37,14 @@ how to test it, and the risk. The user approves in a session.
    output (`list_insights`)? Every task writes a dated log; a task that
    should have run and has no log is a finding (cron itself failing). Did research produce theses, and are any stuck in
    `needs-review`?
-3. **Models.** In the latest model runs: weights that look like data errors
+3. **Models.** `get_signal_quality`: which signals have predicted returns
+   in which markets (rank IC with its t-stat; quintile spread), whether the
+   implied return's calibration slope differs from the value weight in use
+   (0.4 prior), and whether it predicts better on stable than on volatile or
+   peak earnings (the confidence cuts assume so). Under about three
+   independent periods, note it and move on: it is noise. Once there is
+   evidence, propose changes to the signal weights or the reliability cuts.
+   In the latest model runs: weights that look like data errors
    or peak earnings; market expected returns against their history
    (`get_expected_returns`); holdings with Shariah ratios near a limit;
    candidates whose tickers may be misresolved.

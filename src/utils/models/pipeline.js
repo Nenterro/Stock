@@ -31,7 +31,13 @@ const FUND_HINT = /etf|fund|ucits|trust|shares/i;
  *   extraSymbols  symbols to consider beyond holdings (targets, watchlist, ideas)
  *   fetchers      { histories(symbols, range = '10y') -> { SYM: {history, currency} },
  *                   expectedReturns() -> CMA payload,
- *                   screenerRow(symbol) -> screener row or null }
+ *                   screenerRow(symbol) -> screener row or null,
+ *                   signalQuality() -> /api/models/signal-quality payload (optional) }
+ *   research      optional verdicts from the Personal Investment theses:
+ *                 { theses: { SYM: { status, review, impliedReturn, cycle } },
+ *                   peakIndustries: { industry: 'SYM that showed it' } }
+ *                 Rejected names (not held) are left out until their review
+ *                 date; the rest feed construct.reliability().
  *   includeDefaultCore  add DEFAULT_CORE when no global fund is present (default true)
  */
 export async function buildInputs(p) {
@@ -57,6 +63,10 @@ export async function buildInputs(p) {
   }
 
   const er = await p.fetchers.expectedReturns().catch(() => null);
+  const signalQuality = p.fetchers.signalQuality ? await p.fetchers.signalQuality().catch(() => null) : null;
+  const theses = p.research?.theses || {};
+  const peakIndustries = p.research?.peakIndustries || {};
+  const today = new Date().toISOString().slice(0, 10);
   // Funds with their own expected-return assumptions (gold, sukuk) are funds
   // even without a screener row, so they sit in the fund sleeve and aren't
   // held to the single-stock cap.
@@ -75,8 +85,21 @@ export async function buildInputs(p) {
       excluded.push({ symbol: s, reason: `data grade C (missing ${(rows[s].missing || []).join(', ') || 'key inputs'})` });
       continue;
     }
+    // Research rejected it: out of the model until the thesis's review date,
+    // unless already held. Research decides whether it comes back.
+    const t = theses[s];
+    if (t?.status === 'rejected' && !held.includes(s) && !(t.review && t.review <= today)) {
+      excluded.push({ symbol: s, reason: `research: rejected${t.reason ? ` (${t.reason})` : ''}${t.review ? `, until ${t.review}` : ''}` });
+      continue;
+    }
     const currency = currencyOf(s);
     const kind = assumedFunds.has(s) ? 'etf' : rows[s]?.kind || kindOf(s);
+    const industry = rows[s]?.industry;
+    const research = {
+      status: t?.status ?? null,
+      impliedReturn: typeof t?.impliedReturn === 'number' && Number.isFinite(t.impliedReturn) ? t.impliedReturn : null,
+      peakIndustry: industry && peakIndustries[industry] ? industry : null
+    };
     const view = assetView({
       symbol: s,
       kind,
@@ -86,8 +109,13 @@ export async function buildInputs(p) {
       impliedReturn: rows[s]?.impliedReturn,
       scoreCoverage: rows[s]?.scoreCoverage,
       scores: rows[s]?.scores,
-      dividendYield: rows[s]?.dividendYield
-    }, er);
+      dividendYield: rows[s]?.dividendYield,
+      earningsCv: rows[s]?.earningsCv,
+      normalisation: rows[s]?.normalisation ?? rows[s]?.valuation?.normalisation,
+      earningsFlags: rows[s]?.earningsFlags,
+      epsRevision90d: rows[s]?.epsRevision90d,
+      research
+    }, er, { signalQuality });
     assets.push({
       symbol: s,
       sleeve: sleeveOf({ kind, currency }),
@@ -100,6 +128,8 @@ export async function buildInputs(p) {
       source: view?.source || null,
       taxDrag: view?.taxDrag ?? null,
       tilt: view?.tilt ?? null,
+      reliability: view?.reliability ?? null,
+      valueWeight: view?.valueWeight ?? null,
       viewGroup: view?.group ?? null,
       held: held.includes(s),
       score: rows[s]?.score ?? null,
@@ -112,7 +142,7 @@ export async function buildInputs(p) {
   // Stress windows reach back to 2007: the full (coarser) proxy series.
   const long = await p.fetchers.histories(Object.values(PROXIES), 'all').catch(() => ({}));
   const proxiesLong = Object.fromEntries(Object.values(PROXIES).map((s) => [s, long[s]?.history?.length ? long[s] : proxies[s]]).filter(([, v]) => v));
-  return { assets, proxies, proxiesLong, expectedReturns: er, rows, excluded };
+  return { assets, proxies, proxiesLong, expectedReturns: er, signalQuality, rows, excluded };
 }
 
 /** USD series of adjusted closes, for stress tests. */

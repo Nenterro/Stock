@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ledoitWolf, sampleCov, monthlyReturns } from '../src/utils/models/risk.js';
 import { project, meanVariance, blackLitterman, riskParity, stats, invert, matVec } from '../src/utils/models/optimize.js';
 import { projectPlan, stressTest, rng } from '../src/utils/models/simulate.js';
-import { constructPortfolio, assetView, dividendTaxRate, POLICY_SLEEVES } from '../src/utils/models/construct.js';
+import { constructPortfolio, assetView, dividendTaxRate, POLICY_SLEEVES, reliability, calibratedValueWeight } from '../src/utils/models/construct.js';
 
 const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} !== ${b}`);
 
@@ -264,4 +264,38 @@ test('a sleeve with too few candidates is capped, not infeasible', () => {
   assert.ok(rec.sleeves.globalStocks <= 0.2 + 1e-6);
   assert.ok(rec.sleeves.pakistan <= 0.2 + 1e-6);
   assert.ok(out.notes.length === 2, out.notes.join(' | '));
+});
+
+test('reliability: steady earnings keep full confidence; peaks, swings and verdicts cut it', () => {
+  assert.equal(reliability({ earningsCv: 0.1 }).factor, 1);
+  close(reliability({ earningsCv: 0.6 }).factor, 0.35);
+  // Tanker at peak: volatile earnings and trailing 2x normal.
+  close(reliability({ earningsCv: 0.6, normalisation: 0.5 }).factor, 0.175);
+  close(reliability({ earningsFlags: ['eps'], epsRevision90d: -0.2 }).factor, 0.56);
+  close(reliability({ research: { status: 'needs-review' } }).factor, 0.5);
+  close(reliability({ research: { peakIndustry: 'Oil & Gas Midstream' } }).factor, 0.5);
+  // A ready thesis in that industry is not cut; its own estimate skips the earnings checks.
+  assert.equal(reliability({ earningsCv: 0.6, research: { status: 'ready', peakIndustry: 'X', impliedReturn: 0.12 } }).factor, 1);
+  assert.equal(reliability({ earningsCv: 1, normalisation: 0.3, earningsFlags: [1], epsRevision90d: -0.5, research: { status: 'needs-review', peakIndustry: 'X' } }).factor, 0.1);
+});
+
+test('asset views: confidence follows reliability; a thesis estimate replaces the model', () => {
+  const er = { funds: [], markets: [{ key: 'us', name: 'US', expected: { base: { usd: 0.07 } }, depreciationVsUsd: 0 }] };
+  const base = { symbol: 'X', currency: 'USD', region: 'us', impliedReturn: 0.2, scoreCoverage: 1 };
+  close(assetView(base, er).confidence, 0.45);
+  close(assetView({ ...base, normalisation: 0.5 }, er).confidence, 0.225);
+  const t = assetView({ ...base, research: { status: 'ready', impliedReturn: 0.1 } }, er);
+  close(t.expected, 0.07 + 0.4 * (0.1 - 0.07));
+  assert.match(t.source, /thesis/);
+});
+
+test('value weight: the prior until three independent periods, then pulled toward the measured slope', () => {
+  assert.equal(calibratedValueWeight(null, 'us').weight, 0.4);
+  const sq = (slope, se, periods) => ({ horizons: { '3m': { markets: { us: { independentPeriods: periods, calibration: { slope, se } } } } } });
+  assert.equal(calibratedValueWeight(sq(0.1, 0.05, 2), 'us').weight, 0.4);
+  const w = calibratedValueWeight(sq(0.1, 0.05, 4), 'us').weight;
+  // Precise measurement dominates the prior.
+  assert.ok(w > 0.1 && w < 0.15, String(w));
+  assert.ok(calibratedValueWeight(sq(0.1, 1, 4), 'us').weight > 0.38);
+  assert.equal(calibratedValueWeight(sq(-2, 0.01, 6), 'us').weight, 0);
 });

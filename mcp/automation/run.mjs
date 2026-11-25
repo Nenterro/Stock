@@ -29,6 +29,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { api } from '../lib/api.js';
+import { readTheses as readThesesIn, researchInput } from '../lib/theses.js';
 import * as pf from '../lib/portfolio.js';
 import * as store from '../lib/store.js';
 import { buildInputs, runModels } from '../../src/utils/models/pipeline.js';
@@ -119,32 +120,8 @@ function piCommit(message) {
   }
 }
 
-/** Theses with their front matter (symbol, status, review, triggers). */
-function readTheses() {
-  const dir = join(PI, 'theses');
-  if (!existsSync(dir)) return [];
-  const out = [];
-  for (const f of readdirSync(dir).filter((x) => x.endsWith('.md') && !x.startsWith('_'))) {
-    const text = readFileSync(join(dir, f), 'utf8').replace(/\r\n/g, '\n');
-    const m = text.match(/^---\n([\s\S]*?)\n---\n/);
-    const fm = { triggers: {} };
-    if (m) {
-      let inTriggers = false;
-      for (const line of m[1].split('\n')) {
-        const clean = line.replace(/\s+#.*$/, '');
-        const t = clean.match(/^ {2}(\w+):\s*(.+)$/);
-        const k = clean.match(/^(\w+):\s*(.*)$/);
-        if (t && inTriggers) fm.triggers[t[1]] = Number(t[2]);
-        else if (k) {
-          inTriggers = k[1] === 'triggers';
-          if (!inTriggers) fm[k[1]] = k[2].trim();
-        }
-      }
-    }
-    out.push({ file: f, symbol: (fm.symbol || f.replace(/\.md$/, '')).toUpperCase(), ...fm });
-  }
-  return out;
-}
+/** Theses with their front matter (lib/theses.js). */
+const readTheses = () => readThesesIn(PI);
 
 /* ------------------------------------------------------------ candidates */
 
@@ -158,18 +135,22 @@ const CORE_FUNDS = ['ISWD', 'ISDE', 'ISDU', 'IGDA', 'UMMA', 'SPUS', 'HLAL', 'MZN
 
 async function candidates(holdings, rows) {
   const held = holdings.map((h) => h.ticker);
+  // Research rejected these: don't spend a per-sector slot on them (the
+  // pipeline leaves them out until their review date anyway).
+  const today = new Date().toISOString().slice(0, 10);
+  const rejected = new Set(readTheses().filter((t) => t.status === 'rejected' && !(t.review && t.review <= today)).map((t) => t.symbol));
   const targets = Object.keys(rows.find((r) => r.kind === 'targets')?.data?.targets || {});
   const watch = rows.filter((r) => r.kind === 'watch').map((r) => r.symbol);
   const theses = readTheses().filter((t) => !['rejected', 'exited'].includes(t.status)).map((t) => t.symbol);
   const g = await api.screener({ scope: 'global', kind: 'stock', dataGrade: 'A', max_debtToMarketCap: '0.33', max_cashToMarketCap: '0.33', max_interestIncomeToRevenue: '0.05', sort: '-score', limit: 600 });
   const perSector = new Map();
   for (const r of g?.rows || []) {
-    if (r.sector === 'Financial Services' || EXCLUDED_INDUSTRY.test(r.industry || '')) continue;
+    if (r.sector === 'Financial Services' || EXCLUDED_INDUSTRY.test(r.industry || '') || rejected.has(r.symbol)) continue;
     const list = perSector.get(r.sector) || [];
     if (list.length < 7) perSector.set(r.sector, [...list, r.symbol]);
   }
   const p = await api.screener({ scope: 'psx', shariah: 'true', dataGrade: 'A', min_avgValueTraded20d: '10000000', sort: '-score', limit: 25 });
-  const psx = (p?.rows || []).filter((r) => r.kind === 'stock').map((r) => r.symbol);
+  const psx = (p?.rows || []).filter((r) => r.kind === 'stock' && !rejected.has(r.symbol)).map((r) => r.symbol);
   return [...new Set([...held, ...targets, ...watch, ...theses, ...CORE_FUNDS, ...[...perSector.values()].flat(), ...psx].map((s) => String(s).toUpperCase()))];
 }
 
@@ -184,10 +165,12 @@ async function models() {
   const pos = await pf.positions({ currency: 'USD' });
   const symbols = await candidates(pos.holdings, rows);
   log(`${symbols.length} candidates`);
+  const research = await researchInput(async (s) => (await api.screenerRow(s))?.industry, PI);
   const inputs = await buildInputs({
     holdings: pos.holdings,
     extraSymbols: symbols,
-    fetchers: { histories: (s, range = '10y') => api.historyBatch(s, range), expectedReturns: () => api.expectedReturns(), screenerRow: (s) => api.screenerRow(s) }
+    research,
+    fetchers: { histories: (s, range = '10y') => api.historyBatch(s, range), expectedReturns: () => api.expectedReturns(), screenerRow: (s) => api.screenerRow(s), signalQuality: () => api.signalQuality() }
   });
   const fxSeries = await api.fxSeries();
   const cfg = { ...SETTINGS_DEFAULTS, ...(settings.automation || {}) };
@@ -230,7 +213,7 @@ async function models() {
     });
     log(`${name}: ${pct(rec.expectedReturn)} / ${pct(rec.volatility)} in ${results.at(-1).seconds}s`);
   }
-  const views = Object.fromEntries(inputs.assets.map((a) => [a.symbol, { view: a.expected, tilt: a.tilt, tax: a.taxDrag }]));
+  const views = Object.fromEntries(inputs.assets.map((a) => [a.symbol, { view: a.expected, tilt: a.tilt, tax: a.taxDrag, confidence: a.confidence, reliability: a.reliability?.factor ?? null }]));
 
   // Changes in the unconstrained run since the last snapshot.
   const prevRec = rows.filter((r) => r.kind === 'model_snapshot').sort((a, b) => (a.symbol < b.symbol ? 1 : -1))[0];
@@ -261,7 +244,22 @@ async function models() {
     '',
     changes == null ? '_First snapshot: no changes to compare._' : changes.length ? `**Changes since ${prevRec.symbol} (unconstrained run, 1.5+ points):** ${changes.map((c) => `${c.s} ${c.d > 0 ? '+' : ''}${(c.d * 100).toFixed(1)}`).join(', ')}` : `_No change of 1.5 points or more since ${prevRec.symbol}._`,
     '',
-    inputs.excluded?.length ? `Left out: ${inputs.excluded.map((x) => `${x.symbol} (${x.reason})`).join('; ')}.` : ''
+    inputs.excluded?.length ? `Left out: ${inputs.excluded.map((x) => `${x.symbol} (${x.reason})`).join('; ')}.` : '',
+    '',
+    // Why the model trusts each top name as much as it does (construct.reliability).
+    (() => {
+      const bySym = Object.fromEntries(inputs.assets.map((a) => [a.symbol, a]));
+      const cut = Object.keys(results[0].weights)
+        .slice(0, 25)
+        .map((s) => bySym[s])
+        .filter((a) => a?.reliability?.reasons?.length);
+      return cut.length ? `**Confidence cuts on the top names:** ${cut.map((a) => `${a.symbol} x${a.reliability.factor.toFixed(2)} (${a.reliability.reasons.join('; ')})`).join(' · ')}` : '';
+    })(),
+    (() => {
+      const vw = inputs.assets.find((a) => a.valueWeight)?.valueWeight;
+      const sq = inputs.signalQuality;
+      return `Value weight: ${vw ? vw.source : 'prior 0.4'}. Prediction archive: ${sq ? `${sq.snapshots} weekly snapshots since ${sq.first}` : 'not started'} (get_signal_quality).`;
+    })()
   ].join('\n');
   const st = await state();
   const saved = await saveInsight({

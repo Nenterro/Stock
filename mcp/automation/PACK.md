@@ -16,7 +16,11 @@ directory is the user's Personal Investment records.
    read its "Challenge" section). A `ready` thesis not yet challenged waits
    for the next batch: say so, but don't buy it.
 3. The latest "Model runs" insight and the latest "Research: week of" insight
-   (`list_insights`, `get_insight`).
+   (`list_insights`, `get_insight`). The model-runs insight lists the
+   confidence cut on each top name and the value weight in use.
+   `get_signal_quality`: whether the stock signals have predicted returns so
+   far (rank IC and t-stat per market). Weigh stocks against funds with it,
+   once it has a few months of history.
 4. `get_portfolio`, `get_xray` (concentration, currency exposure),
    `get_research` (settings, current targets).
 5. `get_risk_register` and `get_geo_brief`; `get_expected_returns`; the

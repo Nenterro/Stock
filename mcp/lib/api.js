@@ -67,6 +67,7 @@ export const api = {
     return (r?.rows || []).find((x) => x.symbol.toUpperCase() === String(symbol).toUpperCase()) || null;
   },
   expectedReturns: () => call('/api/models/expected-returns'),
+  signalQuality: () => call('/api/models/signal-quality'),
   dataQuality: () => call('/api/data-quality'),
   jobs: () => call('/api/jobs'),
   runJob: (job) => call('/api/jobs/run', { method: 'POST', body: { job }, auth: true }),

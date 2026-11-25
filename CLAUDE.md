@@ -104,7 +104,23 @@ Backend jobs (`lib/jobs.js`, Pakistan time; status at `/api/jobs`):
   implied return / implied growth / fair value, plus peer multiples) and factor
   scores (`scores.js`: percentiles vs market and sector, composite with
   coverage), then statements discovery and the archive top-up (see below),
-  then the data-quality report (`dataQuality.js`).
+  then the data-quality report (`dataQuality.js`). Two steps added on
+  25 November 2026: `estimate revisions` before the screener
+  (`fundamentalsGlobal.refreshRevisions`, one earningsTrend call per global
+  stock, skipped unless the last refresh is 6+ days old) and `signal quality`
+  after it (below).
+
+Prediction archive and signal quality (`lib/predictions.js`, since
+25 November 2026): each screener build archives every stock's model outputs
+with its price and market cap, weekly, to `data/predictions/<date>.json.gz`.
+The daily `signal quality` step scores every pair of snapshots 1, 3, 6 and
+12 months apart, within each market (rank IC per signal, top-minus-bottom
+quintile return, the implied return's calibration slope, and its IC on
+stable vs volatile and peak earnings) into `data/signal_quality.json`;
+`/api/models/signal-quality`, MCP `get_signal_quality`. Price returns, with
+the market-cap ratio taking over across splits. Recorded before the
+outcome, across the whole universe: this, not a backtest, is how the stock
+signals get validated.
 - **monthly, 1st, 00:00** - global universe (`globalUniverse.js`, ~5,100 stocks
   on IBKR markets), global fundamentals (`fundamentalsGlobal.js`, one Yahoo
   call per stock), global risk statistics and the report archive index, then
@@ -177,7 +193,23 @@ Model choices made in the November 2026 review (change them knowingly):
   stock's valuation implied return + a tilt of up to +/-2.5 points from the
   non-value factor scores, less dividend yield x withholding at source
   (`dividendTaxRate`: US 30% for a Pakistan resident, UK/HK/SG 0%, Irish
-  UCITS 0%, PSX 15%).
+  UCITS 0%, PSX 15%). The 40% (`VALUE_WEIGHT`) is a prior:
+  `calibratedValueWeight` moves it toward each market's measured
+  calibration slope once the prediction archive has 3+ independent periods.
+- View confidence = data coverage x `reliability()` (since 25 November
+  2026): cut for volatile earnings (`earningsCv`), trailing earnings above
+  normal (`normalisation`), flagged EPS, falling analyst estimates
+  (`epsRevision90d`), and research verdicts. The optimiser's biggest picks
+  had been its biggest errors (peak-cycle tankers and refiners trusted as
+  much as steady compounders).
+- Research verdicts reach the optimiser through `mcp/lib/theses.js` (the
+  Personal Investment theses' front matter; `build_model_portfolio`
+  `applyResearch`, and the weekly run): `rejected` names are left out until
+  their `review` date unless held; `needs-review` halves confidence;
+  `cycle: peak` halves it for the whole industry; a thesis `impliedReturn`
+  replaces the model's valuation.
+- Analyst estimate revisions (`epsRevision90d`, `revisionBreadth`) are
+  momentum metrics in `scores.js`, global stocks only.
 - Views in the same market share an error (`MARKET_VIEW_SD`, 3 points,
   via a non-diagonal Omega), so many stocks from one market don't add up to
   certainty about that market.

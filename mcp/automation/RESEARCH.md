@@ -26,6 +26,10 @@ buy now (US, UK, Europe, Hong Kong listings, US ADRs, PSX); a Tokyo or
 Singapore name in 100-share lots can still be researched, but note when its lot
 becomes affordable.
 
+The weekly model run lists the confidence cut on each top name (earnings
+variability, peak earnings, flagged data, falling estimates, research
+verdicts). A name with a large cut is usually one to reject quickly.
+
 ## For each name, check
 
 1. **Identity and ticker.** The screener row (`screen_stocks` with `q`) is the
@@ -55,6 +59,23 @@ becomes affordable.
     `challenged:` line to that session;
   - `needs-review`: a real open question, named in one line;
   - `rejected`: why, in one line.
+
+  The optimiser reads two more front-matter fields (lib/theses.js), so set
+  them whenever the research supports them:
+  - `impliedReturn`: your own estimate of the stock's return a year, in its
+    local currency, as a fraction (`0.18`), on recurring earnings. It
+    replaces the model's valuation in the optimiser, so give it whenever
+    you've corrected the model (one-off gains, peak earnings, a data error)
+    or have a better-founded number. Leave it out if you have none.
+  - `cycle: peak` when the stock's earnings are at a cyclical peak for its
+    industry (tankers, refiners, commodity producers at a price spike). The
+    optimiser then trusts every name in that industry less, so the next
+    tanker doesn't take the rejected one's place.
+    Remove it when the cycle has turned (re-researching a name, or the
+    audit), or the whole industry stays penalised.
+
+  A `rejected` thesis keeps the name out of the optimiser until its `review`
+  date, so set that date to when the reason might no longer hold.
 
   Fill `triggers` with numbers only, using the template's keys (`addBelow`,
   `trimAbovePrice`, `trimAboveWeight`, `netDebtToEbitdaMax`): the nightly
