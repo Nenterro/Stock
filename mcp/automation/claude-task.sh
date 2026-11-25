@@ -19,8 +19,8 @@ TASK="$(tr '[:lower:]-' '[:upper:]_' <<<"$task")"
 # from the records, and don't wait for the other tasks.
 trader=""
 case "$task" in trader-*) trader="claude-${task#trader-}" ;; esac
-desk="$work/traders/$trader"
 work="$HOME/stock-automation"
+desk="$work/traders/$trader"
 pi="${PERSONAL_INVESTMENT_DIR:-$HOME/personal-investment}"
 mkdir -p "$work/logs"
 log="$work/logs/claude-$task-$(date +%F).log"
