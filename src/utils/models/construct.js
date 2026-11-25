@@ -86,7 +86,7 @@ export const MARKET_VIEW_SD = 0.03;
  * problems), because a tanker at peak profits with complete data was trusted
  * as much as a steady compounder. Research verdicts count too.
  *
- *   earnings variability  year-to-year swing in profit (CV): 1 up to 0.15,
+ *   earnings variability  year-to-year swing in profit growth (sd of log changes): 1 up to 0.15,
  *                         falling to 0.35 at 0.6 and above (a loss year = 1)
  *   peak earnings         trailing over 1.5x normal: x0.5; over 1.25x: x0.75
  *   earnings flags        EPS inconsistent with net income: x0.7

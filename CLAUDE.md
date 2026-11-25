@@ -380,6 +380,21 @@ on Opus.
   - `pack`: Monday 22:15.
   - `signals`: the 2nd at 03:00. Scores the policy's Pakistan sizing signals
     into `research/pakistan-signals.md` and a "Pakistan signals" insight.
+- `cron.sh paper`: weeknights 23:30, after every market's close. The
+  strategy forward test (paper trading, `mcp/paper/`, since 25 November
+  2026): about 18 strategies (System, optimiser at risk aversion 1/2/4,
+  monthly rotation, frequent rules-based trading, trend, fund trend timing,
+  chart patterns, mean reversion, equal weight, Pakistan timing, ways of
+  adding new money, benchmarks) each trade $30K of paper money under frozen
+  rules (`strategies.mjs`; a change means a new `version`). Decisions at a
+  close fill at the next close; costs by market in `engine.tradeCost`;
+  dividends net of withholding; splits handled. Universe fixed per month
+  (250 global Shariah stocks by liquidity + 60 PSX). A monthly draw of 1,000
+  random 20-stock portfolios is the luck test. Records in the Personal
+  Investment repo under `strategies/` (rules, state, trades, scoreboard);
+  weekly "Strategy scoreboard" insight. Pattern definitions are in
+  `paper/indicators.mjs`, on closes plus volume (PSX has no highs and lows).
+  History now carries open/high/low/volume for Yahoo symbols.
 - Cron runs entries with `sh` (dash): no bash-only syntax in the crontab
   (a `10#` in the old fortnightly audit line silently stopped it from ever
   running until 25 November 2026).

@@ -30,6 +30,7 @@ import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { api } from '../lib/api.js';
 import { readTheses as readThesesIn, researchInput } from '../lib/theses.js';
+import { runPaper } from '../paper/run.mjs';
 import * as pf from '../lib/portfolio.js';
 import * as store from '../lib/store.js';
 import { buildInputs, runModels } from '../../src/utils/models/pipeline.js';
@@ -191,7 +192,10 @@ async function models() {
   const variants = [
     ['Unconstrained', {}],
     ['Old policy bounds', { sleeves: POLICY_SLEEVES }],
-    ['Risk implied by the policy mix', { riskAversion: null }]
+    ['Risk implied by the policy mix', { riskAversion: null }],
+    // For the paper-trading forward test (mcp/paper): the same run at other risk appetites.
+    ['Risk aversion 1', { riskAversion: 1 }],
+    ['Risk aversion 4', { riskAversion: 4 }]
   ];
   const results = [];
   for (const [name, over] of variants) {
@@ -226,7 +230,7 @@ async function models() {
         .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))
     : null;
 
-  await upsertResearch('model_snapshot', TODAY, { variants: results, candidates: symbols.length, excluded: inputs.excluded, settings: cfg, riskAversion: settings.riskAversion ?? null }, { replace: true });
+  await upsertResearch('model_snapshot', TODAY, { variants: results, candidates: symbols.length, symbols: inputs.assets.map((a) => a.symbol), excluded: inputs.excluded, settings: cfg, riskAversion: settings.riskAversion ?? null }, { replace: true });
 
   const table = (w) =>
     Object.entries(w)
@@ -535,7 +539,31 @@ async function bookkeeping() {
 
 /* ---------------------------------------------------------------------- main */
 
-const tasks = { models, alerts, bookkeeping };
+/* ------------------------------------------------------------------ paper */
+
+/** Nightly paper trading: the strategy forward test (mcp/paper/run.mjs). */
+async function paper() {
+  piPull();
+  const st = await state();
+  await runPaper({
+    api,
+    pf,
+    pi: PI,
+    date: TODAY,
+    dry: DRY,
+    log,
+    saveInsight,
+    excludedIndustry: EXCLUDED_INDUSTRY,
+    insightId: st.paperInsightId,
+    onInsight: (id) => (st.paperInsightId = id)
+  });
+  if (!DRY) {
+    await upsertResearch('automation_state', '*', { paperInsightId: st.paperInsightId });
+    piCommit(`Paper trading ${TODAY}`);
+  }
+}
+
+const tasks = { models, alerts, bookkeeping, paper };
 if (!tasks[task]) {
   console.error(`Usage: node mcp/automation/run.mjs <${Object.keys(tasks).join('|')}> [--dry] [--pi <dir>]`);
   process.exit(2);
