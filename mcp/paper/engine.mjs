@@ -273,8 +273,10 @@ export function fillPending(p, date, market, log) {
       const fx = usdPer(market.rates, pos?.currency || market.info(s).currency);
       const have = pos && fx ? pos.shares * b.price * fx : 0;
       const want = w * total;
-      // Skip small top-ups: they cost more than the drift.
-      if (want - have > Math.max(150, 0.01 * total)) buy(p, s, want - have, b, date, market, log, o.reason);
+      // Skip small top-ups of a holding: they cost more than the drift. A
+      // new position is bought at any size a whole share allows.
+      const min = have > 0 ? Math.max(150, 0.01 * total) : 50;
+      if (want - have > min) buy(p, s, want - have, b, date, market, log, o.reason);
     }
     p.pending = null;
     p.lastRebalance = date;

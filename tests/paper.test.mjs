@@ -41,6 +41,16 @@ test('orders fill at the next close, in whole shares, net of costs', () => {
   close(p.nav.at(-1).value, p.cash + 9 * 120);
 });
 
+test('a rebalance opens small new positions, but skips small top-ups', () => {
+  const d = days(2);
+  const syms = Array.from({ length: 100 }, (_, i) => `S${i}`);
+  const m = mkMarket(Object.fromEntries(syms.map((s) => [s, d.map((date) => ({ date, price: 10, adjClose: 10 }))])));
+  const p = newPortfolio({ id: 't', startedAt: d[0], cash: 30000 });
+  p.pending = { createdOn: d[0], targets: Object.fromEntries(syms.map((s) => [s, 0.01])) };
+  fillPending(p, d[1], m, []);
+  assert.equal(Object.keys(p.positions).length, 100);
+});
+
 test('lots: a Tokyo order buys in 100-share lots or not at all', () => {
   const d = days(2);
   const m = mkMarket({ '7203.T': d.map((date) => ({ date, price: 3000, adjClose: 3000 })) }, { info: { '7203.T': { currency: 'JPY', country: 'Japan' } } });
