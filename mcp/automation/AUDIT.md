@@ -1,4 +1,4 @@
-# System audit (every two weeks)
+# System audit (weekly)
 
 You audit the whole investment system for gaps: data, models, automation and
 process. Fix what is safe to fix, and propose the rest with enough detail
@@ -30,10 +30,12 @@ how to test it, and the risk. The user approves in a session.
    `get_data_quality` (coverage, stale prices, statements needing review,
    earnings adjustments and flags), `get_geo_brief` (dated today or
    yesterday?). The logs in the added directories (automation, news,
-   statements) for the last 14 days: errors, usage-limit waits, empty runs.
-2. **Automation outputs.** Did the weekly model runs, research, alerts, watch
-   and monthly bookkeeping run and produce sensible output
-   (`list_insights`)? Did research produce theses, and are any stuck in
+   statements) for the last 7 days: errors, usage-limit waits, empty runs.
+2. **Automation outputs.** Did the weekly model runs, research (4 names a
+   night, Tuesday to Saturday), the thesis challenges, alerts, watch, the
+   monthly Pakistan signals and monthly bookkeeping run and produce sensible
+   output (`list_insights`)? Every task writes a dated log; a task that
+   should have run and has no log is a finding (cron itself failing). Did research produce theses, and are any stuck in
    `needs-review`?
 3. **Models.** In the latest model runs: weights that look like data errors
    or peak earnings; market expected returns against their history

@@ -323,22 +323,34 @@ stocks: grade-A Shariah names went from 0 to 33 when it was connected.
 
 ### Investment automation (`mcp/automation/`)
 
-Runs on the home server from cron (UTC), using the server's clone of this repo
-(`~/stock-tracker`, pulled nightly at 22:40) and its `mcp/.env`, which since
-November 2026 also holds the E2EE PIN and login session, so it can read the
-portfolio unattended. Transaction writes are off there.
+Runs on the home server from cron (UTC; Pakistan is UTC+5), using the
+server's clone of this repo (`~/stock-tracker`, pulled nightly at 21:50) and
+its `mcp/.env`, which since November 2026 also holds the E2EE PIN and login
+session, so it can read the portfolio unattended. Transaction writes are off
+there. Since the move to the Max plan (November 2026) every Claude task runs
+on Opus.
 
 - `cron.sh <task>` runs `run.mjs` (plain code, no Claude):
-  - `alerts`: nightly 22:45.
-  - `models`: Saturday 23:30. Optimiser variants plus the next batch's
+  - `alerts`: nightly 21:55.
+  - `models`: Tuesday 09:00. Optimiser variants plus the next batch's
     contribution plan.
   - `bookkeeping`: the 1st at 06:00. Forward-test returns and ledger scoring.
 - `claude-task.sh <task>` runs one headless session per task, instructions in
-  `<TASK>.md`. Only one runs at a time, with only that task's tools:
-  - `watch`: nightly 23:15, Sonnet.
-  - `research`: Sunday 01:00, Opus.
-  - `pack`: Sunday 04:30, Opus.
-  - `audit`: every second Wednesday 01:00, Opus.
+  `<TASK>.md`. Only one runs at a time (a shared lock), with only that task's
+  tools:
+  - `watch`: nightly 22:05.
+  - `research`: Tuesday to Saturday 22:15, 4 names a run (`RESEARCH_NAMES`).
+  - `challenge`: nightly 01:30. A second session tries to break each thesis
+    research marked `ready`; the pack buys only theses it upheld
+    (`challenged:` in the front matter). Exits without a session when there
+    is nothing to challenge.
+  - `audit`: Sunday 22:15, weekly.
+  - `pack`: Monday 22:15.
+  - `signals`: the 2nd at 03:00. Scores the policy's Pakistan sizing signals
+    into `research/pakistan-signals.md` and a "Pakistan signals" insight.
+- Cron runs entries with `sh` (dash): no bash-only syntax in the crontab
+  (a `10#` in the old fortnightly audit line silently stopped it from ever
+  running until 25 November 2026).
 - Outputs land in the app (Insights; research records `model_snapshot`,
   `automation_state`, `forward_test`) and in the private Personal Investment
   repository. That repository is a bare repo at `~/personal-investment.git` on
@@ -346,8 +358,7 @@ portfolio unattended. Transaction writes are off there.
   gitignored `Personal Investment/` folder here is another clone. Each run
   pulls it before working and commits and pushes after; interactive sessions
   pull at the start.
-- Logs: `~/stock-automation/logs/`. Cron backup before the entries:
-  `~/crontab.bak-20261112`.
+- Logs: `~/stock-automation/logs/`. Cron backups: `~/crontab.bak-20261112`, `~/crontab.bak-20261125`.
 - `node mcp/automation/run.mjs <task> --dry --pi "<path>"` runs a task here
   without writing anything.
 

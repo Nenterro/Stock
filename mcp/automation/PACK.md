@@ -11,11 +11,17 @@ directory is the user's Personal Investment records.
    `status.md` ("Next steps" and the latest session), `decisions.md` (the
    latest entries), `forward-test.md` (ledger, recorded weights).
 2. `theses/`: every `ready` and `holding` thesis, with its front matter.
+   A `ready` thesis is buyable only once its front matter has a
+   `challenged:` line that says `upheld` (the challenge session's verdict;
+   read its "Challenge" section). A `ready` thesis not yet challenged waits
+   for the next batch: say so, but don't buy it.
 3. The latest "Model runs" insight and the latest "Research: week of" insight
    (`list_insights`, `get_insight`).
 4. `get_portfolio`, `get_xray` (concentration, currency exposure),
    `get_research` (settings, current targets).
-5. `get_risk_register` and `get_geo_brief`; `get_expected_returns`.
+5. `get_risk_register` and `get_geo_brief`; `get_expected_returns`; the
+   latest "Pakistan signals" insight and `research/pakistan-signals.md`
+   (monthly scores and a suggested Pakistan share).
 6. Alerts and watch notes from the last 14 days (`list_insights` kind `note`).
 
 ## Decide
@@ -24,7 +30,8 @@ directory is the user's Personal Investment records.
    holding or add a name only with a `ready` thesis (or a fund). Weigh the
    evidence for stocks against funds (the forward test so far, how many
    verified names exist, data problems found this month). Size Pakistan from
-   the policy's signals and the one-way currency rule. Where your targets
+   the monthly Pakistan signals score (say where you depart from its
+   suggested share, and why) and the one-way currency rule. Where your targets
    depart materially from the unconstrained run (a name the model wants at 3%+
    left out, or a 5-point+ difference in a sleeve), that is a ledger entry.
 2. **The next batch.** Batch size from the policy (`automation.batchUsd` in

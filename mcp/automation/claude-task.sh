@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Headless Claude tasks, run by cron on the home server:
-#   claude-task.sh research | watch | pack | audit
+#   claude-task.sh research | challenge | watch | pack | audit | signals
 # Each runs one `claude -p` session in the private Personal Investment repo
 # (pulled first, committed and pushed after), with the stock-tracker MCP
 # server and only the tools that task needs. Instructions:
 # mcp/automation/<TASK>.md. Logs: ~/stock-automation/logs/claude-<task>-<date>.log.
 #
 #   <TASK>_MODEL     overrides the model, e.g. AUDIT_MODEL=claude-opus-5-5
-#   RESEARCH_NAMES   names per research run (default 1: one a night, so no
-#                    single 5-hour usage window carries the whole week)
+#   RESEARCH_NAMES   names per research run (default 4; it was 1 before the
+#                    move to the Max plan in November 2026)
 set -uo pipefail
 export PATH="$HOME/.local/node/bin:$HOME/.local/bin:$PATH"
 here="$(cd "$(dirname "$0")/.." && pwd)" # mcp/
@@ -23,12 +23,14 @@ flock -w 7200 9 || { echo "$(date -Is) another Claude task still running" >>"$lo
 export STOCK_API_URL="${STOCK_API_URL:-http://localhost:3005}"
 export PERSONAL_INVESTMENT_DIR="$pi"
 
-# Models: Opus where judgement matters, Sonnet for the nightly watch.
+# Models: Opus for every task (Max plan since November 2026).
 case "$task" in
-  watch) default_model="claude-sonnet-5-5"; minutes=30 ;;
-  research) default_model="claude-opus-5-5"; minutes=45 ;;
+  watch) default_model="claude-opus-5-5"; minutes=30 ;;
+  research) default_model="claude-opus-5-5"; minutes=150 ;;
+  challenge) default_model="claude-opus-5-5"; minutes=120 ;;
   pack) default_model="claude-opus-5-5"; minutes=90 ;;
   audit) default_model="claude-opus-5-5"; minutes=120 ;;
+  signals) default_model="claude-opus-5-5"; minutes=60 ;;
   *) echo "unknown task $task" >>"$log"; exit 2 ;;
 esac
 model_var="${TASK}_MODEL"
@@ -47,6 +49,8 @@ case "$task" in
   research) TOOLS="$READ,$FILES,WebSearch,WebFetch,mcp__stock-tracker__save_insight,mcp__stock-tracker__set_watchlist,mcp__stock-tracker__set_note" ;;
   pack) TOOLS="$READ,$FILES,WebSearch,mcp__stock-tracker__save_insight,mcp__stock-tracker__set_targets,mcp__stock-tracker__record_forward_test_weights" ;;
   audit) TOOLS="$READ,$FILES,WebSearch,mcp__stock-tracker__save_insight,mcp__stock-tracker__run_job,mcp__stock-tracker__retry_statement,mcp__stock-tracker__set_watchlist,mcp__stock-tracker__set_note" ;;
+  challenge) TOOLS="$READ,$FILES,WebSearch,WebFetch,mcp__stock-tracker__save_insight,mcp__stock-tracker__set_note" ;;
+  signals) TOOLS="$READ,$FILES,WebSearch,WebFetch,mcp__stock-tracker__save_insight" ;;
 esac
 
 # --rebase: a run that could not push last time still has its commit locally.
@@ -54,7 +58,19 @@ git -C "$pi" pull -q --rebase >>"$log" 2>&1 || echo "$(date -Is) git pull failed
 
 extra=""
 if [ "$task" = research ]; then
-  extra=" Research at most ${RESEARCH_NAMES:-1} name(s) this run (this replaces the 5 in 'Choose up to 5 names'): the week is spread over nightly runs."
+  extra=" Research at most ${RESEARCH_NAMES:-4} name(s) this run (this replaces the 5 in 'Choose up to 5 names'): the week is spread over nightly runs."
+fi
+if [ "$task" = challenge ]; then
+  # Theses marked ready that no challenge has looked at yet. None: no session.
+  pending="$(cd "$pi/theses" 2>/dev/null && for f in *.md; do
+    grep -qE '^status:[[:space:]]*ready' "$f" && ! grep -qE '^challenged:' "$f" && echo "$f"
+  done | tr '
+' ' ')"
+  if [ -z "${pending// /}" ]; then
+    echo "$(date -Is) nothing to challenge" >>"$log"
+    exit 0
+  fi
+  extra=" Theses to challenge this run: ${pending}"
 fi
 PROMPT="You are running the scheduled '$task' task for the user's investment system, unattended. Read $here/automation/$TASK.md and follow it exactly. Today is $(date +%F). Your working directory is the user's Personal Investment records.$extra End with one line: RESULT <one-sentence summary>."
 run() {

@@ -50,7 +50,9 @@ becomes affordable.
 - `theses/<SYMBOL>.md` from `theses/_template.md` (keep its front matter).
   `status`:
   - `ready`: data checked, Shariah passes, and you would buy at the model's
-    weight;
+    weight. A separate challenge session (`CHALLENGE.md`) then tries to
+    break it, and the decision pack buys only theses it upheld; leave the
+    `challenged:` line to that session;
   - `needs-review`: a real open question, named in one line;
   - `rejected`: why, in one line.
 
@@ -63,6 +65,9 @@ becomes affordable.
 - One `save_insight` per name, kind `stock-analysis`, with `verdict` (`buy`,
   `watch` or `avoid`) and `confidence`.
 - If a name came from `automation/requests.md`, remove its line there.
+- A thesis whose challenge downgraded it can be researched again once its
+  reason no longer holds: remove the `challenged:` line when you set it back
+  to `ready`.
 - One `save_insight` kind `screen` titled "Research: week of <date>",
   summarising the names, verdicts and anything the model got wrong.
 
