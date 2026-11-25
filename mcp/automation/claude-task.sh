@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Headless Claude tasks, run by cron on the home server:
 #   claude-task.sh research | challenge | watch | pack | audit | signals
+#                  | trader-news | trader-fundamental
 # Each runs one `claude -p` session in the private Personal Investment repo
 # (pulled first, committed and pushed after), with the stock-tracker MCP
 # server and only the tools that task needs. Instructions:
@@ -13,12 +14,17 @@ set -uo pipefail
 export PATH="$HOME/.local/node/bin:$HOME/.local/bin:$PATH"
 here="$(cd "$(dirname "$0")/.." && pwd)" # mcp/
 task="${1:?task}"
-TASK="$(tr '[:lower:]' '[:upper:]' <<<"$task")"
+TASK="$(tr '[:lower:]-' '[:upper:]_' <<<"$task")"
+# Paper-trading Claude traders (mcp/paper) run on their own desk, apart
+# from the records, and don't wait for the other tasks.
+trader=""
+case "$task" in trader-*) trader="claude-${task#trader-}" ;; esac
+desk="$work/traders/$trader"
 work="$HOME/stock-automation"
 pi="${PERSONAL_INVESTMENT_DIR:-$HOME/personal-investment}"
 mkdir -p "$work/logs"
 log="$work/logs/claude-$task-$(date +%F).log"
-exec 9>"$work/.claude.lock" # one Claude task at a time
+if [ -n "$trader" ]; then exec 9>"$work/.$task.lock"; else exec 9>"$work/.claude.lock"; fi # one Claude task at a time (traders apart)
 flock -w 7200 9 || { echo "$(date -Is) another Claude task still running" >>"$log"; exit 0; }
 export STOCK_API_URL="${STOCK_API_URL:-http://localhost:3005}"
 export PERSONAL_INVESTMENT_DIR="$pi"
@@ -31,6 +37,8 @@ case "$task" in
   pack) default_model="claude-opus-5-5"; minutes=90 ;;
   audit) default_model="claude-opus-5-5"; minutes=120 ;;
   signals) default_model="claude-opus-5-5"; minutes=60 ;;
+  trader-news) default_model="claude-opus-5-5"; minutes=45 ;;
+  trader-fundamental) default_model="claude-opus-5-5"; minutes=150 ;;
   *) echo "unknown task $task" >>"$log"; exit 2 ;;
 esac
 model_var="${TASK}_MODEL"
@@ -44,6 +52,9 @@ EOF
 # Read-only market and portfolio tools for every task; writes per task.
 READ="mcp__stock-tracker__stock_status,mcp__stock-tracker__get_portfolio,mcp__stock-tracker__get_xray,mcp__stock-tracker__get_performance,mcp__stock-tracker__get_transactions,mcp__stock-tracker__get_fundamentals,mcp__stock-tracker__get_technicals,mcp__stock-tracker__get_fund_holdings,mcp__stock-tracker__get_price_history,mcp__stock-tracker__get_quotes,mcp__stock-tracker__search_assets,mcp__stock-tracker__screen_stocks,mcp__stock-tracker__plan_contribution,mcp__stock-tracker__get_expected_returns,mcp__stock-tracker__get_signal_quality,mcp__stock-tracker__build_model_portfolio,mcp__stock-tracker__get_statements,mcp__stock-tracker__get_data_quality,mcp__stock-tracker__get_jobs,mcp__stock-tracker__get_news,mcp__stock-tracker__get_geo_brief,mcp__stock-tracker__get_risk_register,mcp__stock-tracker__get_research,mcp__stock-tracker__list_insights,mcp__stock-tracker__get_insight"
 FILES="Read,Write,Edit,Glob,Grep"
+# Traders: market and news data only (no portfolio, research, insights,
+# signal quality or optimiser), so their record is independent.
+MARKET="mcp__stock-tracker__get_fundamentals,mcp__stock-tracker__get_technicals,mcp__stock-tracker__get_fund_holdings,mcp__stock-tracker__get_price_history,mcp__stock-tracker__get_quotes,mcp__stock-tracker__search_assets,mcp__stock-tracker__screen_stocks,mcp__stock-tracker__get_expected_returns,mcp__stock-tracker__get_statements,mcp__stock-tracker__get_data_quality,mcp__stock-tracker__get_news,mcp__stock-tracker__get_geo_brief,mcp__stock-tracker__get_risk_register"
 case "$task" in
   watch) TOOLS="$READ,$FILES,mcp__stock-tracker__save_insight" ;;
   research) TOOLS="$READ,$FILES,WebSearch,WebFetch,mcp__stock-tracker__save_insight,mcp__stock-tracker__set_watchlist,mcp__stock-tracker__set_note" ;;
@@ -51,10 +62,11 @@ case "$task" in
   audit) TOOLS="$READ,$FILES,WebSearch,mcp__stock-tracker__save_insight,mcp__stock-tracker__run_job,mcp__stock-tracker__retry_statement,mcp__stock-tracker__set_watchlist,mcp__stock-tracker__set_note" ;;
   challenge) TOOLS="$READ,$FILES,WebSearch,WebFetch,mcp__stock-tracker__save_insight,mcp__stock-tracker__set_note" ;;
   signals) TOOLS="$READ,$FILES,WebSearch,WebFetch,mcp__stock-tracker__save_insight" ;;
+  trader-*) TOOLS="$MARKET,$FILES,WebSearch,WebFetch" ;;
 esac
 
 # --rebase: a run that could not push last time still has its commit locally.
-git -C "$pi" pull -q --rebase >>"$log" 2>&1 || echo "$(date -Is) git pull failed" >>"$log"
+[ -z "$trader" ] && { git -C "$pi" pull -q --rebase >>"$log" 2>&1 || echo "$(date -Is) git pull failed" >>"$log"; }
 
 extra=""
 if [ "$task" = research ]; then
@@ -73,12 +85,33 @@ if [ "$task" = challenge ]; then
   extra=" Theses to challenge this run: ${pending}"
 fi
 PROMPT="You are running the scheduled '$task' task for the user's investment system, unattended. Read $here/automation/$TASK.md and follow it exactly. Today is $(date +%F). Your working directory is the user's Personal Investment records.$extra End with one line: RESULT <one-sentence summary>."
+cwd="$pi"
+deny=()
+add_dirs=("$here/automation" "$work/logs" "$HOME/stock-news/logs" "$HOME/stock-statements/logs")
+if [ -n "$trader" ]; then
+  if [ ! -f "$desk/brief.json" ]; then
+    echo "$(date -Is) no brief yet (the nightly paper run writes it)" >>"$log"
+    exit 0
+  fi
+  mkdir -p "$desk/theses"
+  cwd="$desk"
+  add_dirs=("$here/automation")
+  # Keep the desk independent: no reading the records, the other desk or the logs.
+  other="claude-news"; [ "$trader" = claude-news ] && other="claude-fundamental"
+  for d in "$pi" "$work/traders/$other" "$work/logs"; do
+    for t in Read Glob Grep Edit Write; do deny+=("$t(/$d/**)"); done
+  done
+  PROMPT="You are running your scheduled paper-trading session, unattended. Read $here/automation/$TASK.md and follow it exactly. Today is $(date +%F). Your working directory is your trading desk (brief.json, journal.md, theses/); write orders.json there. End with one line: RESULT <one-sentence summary>."
+fi
+flags=()
+[ ${#deny[@]} -gt 0 ] && flags=(--disallowedTools "${deny[@]}")
 run() {
-  cd "$pi" && timeout $((minutes * 60)) claude -p "$PROMPT" \
+  cd "$cwd" && timeout $((minutes * 60)) claude -p "$PROMPT" \
     --model "$MODEL" \
     --mcp-config "$mcpconf" --strict-mcp-config \
     --allowedTools "$TOOLS" \
-    --add-dir "$here/automation" "$work/logs" "$HOME/stock-news/logs" "$HOME/stock-statements/logs" 2>&1
+    --add-dir "${add_dirs[@]}" \
+    ${flags[@]+"${flags[@]}"} 2>&1
 }
 echo "$(date -Is) start: model $MODEL" >>"$log"
 out="$(run)"
@@ -104,7 +137,7 @@ echo "$(date -Is) exit $code ${result:-no result line}" >>"$log"
 [ -z "$result" ] && printf '%s\n' "$out" | tail -40 >>"$log"
 
 # Commit and push what the session wrote.
-if [ -n "$(git -C "$pi" status --porcelain)" ]; then
+if [ -z "$trader" ] && [ -n "$(git -C "$pi" status --porcelain)" ]; then
   git -C "$pi" add -A
   git -C "$pi" commit -q -m "Automated $task, $(date +%F)
 

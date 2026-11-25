@@ -283,10 +283,20 @@ export function fillPending(p, date, market, log) {
     return;
   }
 
-  for (const s of o.sells || []) {
+  // A sell is a symbol (the whole position) or { symbol, usd } (a trim).
+  for (const x of o.sells || []) {
+    const s = typeof x === 'string' ? x : x.symbol;
     const b = fillBar(s);
-    if (b) sell(p, s, p.positions[s]?.shares || 0, b, date, market, log, o.reasons?.[s] || o.reason);
-    else if (!stale) waiting.push(s);
+    const pos = p.positions[s];
+    if (b && pos) {
+      let shares = pos.shares;
+      if (typeof x === 'object' && x.usd > 0) {
+        const fx = usdPer(market.rates, pos.currency);
+        const unit = b.price * (fx || 0) * lotSize(s);
+        shares = unit > 0 ? Math.min(pos.shares, Math.ceil(x.usd / unit) * lotSize(s)) : 0;
+      }
+      sell(p, s, shares, b, date, market, log, (typeof x === 'object' && x.reason) || o.reasons?.[s] || o.reason);
+    } else if (!b && pos && !stale) waiting.push(x);
   }
   const buysWaiting = [];
   for (const x of o.buys || []) {

@@ -12,9 +12,10 @@
  *   random.json             the luck test: random 20-stock portfolios a month
  *   scoreboard.md           the comparison
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { STRATEGIES, EXTRA_SYMBOLS } from './strategies.mjs';
+import { homedir } from 'node:os';
+import { STRATEGIES, EXTRA_SYMBOLS, TRADER_FUNDS } from './strategies.mjs';
 import { newPortfolio, markToMarket, fillPending, recordNav, deposit, metrics, monthEnds, value, barAt, START_USD } from './engine.mjs';
 import { closes } from './indicators.mjs';
 
@@ -252,6 +253,29 @@ export async function runPaper(o) {
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
   const stocks = u.stocks.map((s) => s.symbol).filter((s) => series.has(s));
 
+  // Claude traders' desks (outside the records, so their sessions can't see
+  // the other strategies): orders.json in, brief.json out.
+  const desks = o.tradersDir || process.env.PAPER_TRADERS_DIR || join(homedir(), 'stock-automation', 'traders');
+  const consumed = {};
+  const claudeOrders = (id) => {
+    const f = join(desks, id, 'orders.json');
+    if (!existsSync(f)) return null;
+    const raw = readJson(f, null);
+    if (!raw) {
+      log(`${id}: orders.json does not parse; ignored`);
+      return null;
+    }
+    // Decision date: when the file was written (never earlier), so an order
+    // can't be backdated to a price it didn't know.
+    const written = new Date(statSync(f).mtimeMs).toISOString().slice(0, 10);
+    const asOf = /^\d{4}-\d{2}-\d{2}$/.test(raw.asOf || '') ? raw.asOf : written;
+    const createdOn = asOf > written ? asOf : written;
+    if (createdOn > date) return null;
+    const order = { ...raw, createdOn };
+    consumed[id] = { file: f, order };
+    return order;
+  };
+
   // Frozen rules: record each strategy's rules when it starts.
   const rules = rulesFile(dir);
   const fills = {};
@@ -290,6 +314,7 @@ export async function runPaper(o) {
       snapshot,
       targets,
       pakistanShare: pakistanShare(pi),
+      claudeOrders,
       value: value(p, date, market)
     };
     if (!p.pending) {
@@ -343,6 +368,58 @@ export async function runPaper(o) {
       appendFileSync(file, f.map((t) => [t.date, t.fillDate, t.symbol, t.side, +t.shares.toFixed(4), +t.price.toFixed(4), t.currency, t.value.toFixed(2), t.cost.total.toFixed(2), JSON.stringify(t.reason || '')].join(',')).join('\n') + '\n');
     }
   }
+  // Claude traders: archive the orders they sent, with a decision ledger, and
+  // brief each desk for its next session.
+  for (const s of STRATEGIES.filter((x) => x.claude)) {
+    const p = states[s.id];
+    const desk = join(desks, s.id);
+    mkdirSync(join(desk, 'done'), { recursive: true });
+    const c = consumed[s.id];
+    if (c) {
+      const rec = join(dir, 'claude', s.id);
+      mkdirSync(rec, { recursive: true });
+      writeJson(join(rec, `${c.order.createdOn}.json`), c.order);
+      const ledger = join(rec, 'ledger.csv');
+      if (!existsSync(ledger)) writeFileSync(ledger, 'decided,symbol,action,usd,price,currency,horizon,status,reason,wrong_if\n');
+      const rejected = new Set((p.notes.rejected || []).filter((r) => r.date === c.order.createdOn).map((r) => `${r.symbol}|${r.action}`));
+      const lines = (c.order.decisions || []).map((d) => {
+        const sym = String(d.symbol || '').toUpperCase();
+        const b = market.bars(sym).at(-1);
+        const status = rejected.has(`${sym}|${String(d.action || '').toLowerCase()}`) ? 'rejected' : 'sent';
+        return [c.order.createdOn, sym, d.action, d.usd ?? '', b?.price ?? '', market.info(sym).currency, d.horizon ?? '', status, JSON.stringify(d.reason || ''), JSON.stringify(d.wrongIf || '')].join(',');
+      });
+      if (lines.length) appendFileSync(ledger, lines.join('\n') + '\n');
+      renameSync(c.file, join(desk, 'done', `${c.order.createdOn}-${Date.now()}.json`));
+    }
+    const fx = (ccy) => (ccy === 'USD' ? 1 : rates[ccy] > 0 ? 1 / rates[ccy] : null);
+    const v = value(p, date, market);
+    const brief = {
+      date,
+      note: 'Your desk: this portfolio is yours alone. Write orders.json here to trade (schema in your instructions); keep journal.md and theses/ as your memory.',
+      rules: s.rules,
+      constraints: { maxPositions: s.maxPositions, minBuyUsd: 300, maxPositionShare: 0.2, longOnly: true, fills: 'next close after the day you write orders.json' },
+      portfolio: {
+        value: v,
+        cash: p.cash,
+        startedAt: p.startedAt,
+        start: START_USD,
+        positions: Object.entries(p.positions).map(([sym, pos]) => {
+          const b = market.bars(sym).at(-1);
+          const val = b && fx(pos.currency) ? pos.shares * b.price * fx(pos.currency) : null;
+          return { symbol: sym, shares: pos.shares, currency: pos.currency, price: b?.price ?? null, priceDate: b?.date ?? null, valueUsd: val, costUsd: pos.costUsd, gain: val != null && pos.costUsd > 0 ? val / pos.costUsd - 1 : null, since: pos.entryDate, decision: pos.meta || null };
+        }),
+        pending: p.pending || null,
+        recentlyRejected: (p.notes.rejected || []).slice(-10)
+      },
+      universe: [...u.stocks.map((x) => ({ symbol: x.symbol, country: x.country, sector: x.sector, industry: x.industry, currency: x.currency })), ...TRADER_FUNDS.map((x) => ({ symbol: x, kind: 'fund' }))]
+    };
+    writeJson(join(desk, 'brief.json'), brief);
+    if (!existsSync(join(desk, 'journal.md'))) writeFileSync(join(desk, 'journal.md'), `# ${s.name}: journal
+
+One entry per session, newest last: what you saw, what you did and why.
+`);
+  }
+
   // Weekly in the app: Friday's run (and the first).
   if (weekday === 5 || !o.insightId) {
     const saved = await o.saveInsight({

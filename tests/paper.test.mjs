@@ -142,3 +142,47 @@ test('strategies: unique ids, frozen rules written, every one decides without da
     assert.doesNotThrow(() => s.decide(ctx, p), s.id);
   }
 });
+
+test('Claude orders: the rules are enforced in code, with reasons for every rejection', async () => {
+  const { ordersFromClaude } = await import('../mcp/paper/strategies.mjs');
+  const d = days(2);
+  const bars = (s) => (['AAA', 'BBB', 'CCC', 'ISWD'].includes(s) ? d.map((date) => ({ date, price: 100, adjClose: 100 })) : []);
+  const p = newPortfolio({ id: 'claude-news', startedAt: d[0], cash: 20000 });
+  p.positions.AAA = { shares: 50, costUsd: 5000, currency: 'USD' }; // $5,000 = 20% of $25,000
+  const ctx = { stocks: ['AAA', 'BBB', 'CCC'], bars, value: 25000, market: { rates: { USD: 1 } } };
+  const ok = { reason: 'r', wrongIf: 'w', horizon: '5d' };
+  const { order, rejected } = ordersFromClaude(
+    {
+      createdOn: d[1],
+      decisions: [
+        { symbol: 'bbb', action: 'buy', usd: 9000, ...ok }, // capped at 20% = $5,000
+        { symbol: 'AAA', action: 'buy', usd: 1000, ...ok }, // already at the limit
+        { symbol: 'ZZZ', action: 'buy', usd: 1000, ...ok }, // outside the universe
+        { symbol: 'CCC', action: 'buy', usd: 100, ...ok }, // too small
+        { symbol: 'ISWD', action: 'buy', usd: 1000, reason: 'r' }, // no wrongIf
+        { symbol: 'CCC', action: 'sell', ...ok }, // not held
+        { symbol: 'AAA', action: 'trim', usd: 1000, ...ok }
+      ]
+    },
+    p,
+    ctx,
+    { maxPositions: 10 }
+  );
+  assert.deepEqual(order.buys.map((b) => [b.symbol, b.usd]), [['BBB', 5000]]);
+  assert.deepEqual(order.sells, [{ symbol: 'AAA', usd: 1000, reason: 'r' }]);
+  assert.deepEqual(rejected.map((r) => r.why), ['already at the 20% limit', 'outside the universe and core funds', 'buys must be $300 or more', 'missing reason or wrongIf', 'not held']);
+  // Position limit.
+  const many = ordersFromClaude({ createdOn: d[1], decisions: ['BBB', 'CCC'].map((symbol) => ({ symbol, action: 'buy', usd: 1000, ...ok })) }, p, ctx, { maxPositions: 2 });
+  assert.equal(many.order.buys.length, 1);
+  assert.match(many.rejected[0].why, /more than 2 positions/);
+});
+
+test('a trim sells part of a position, rounded up to whole shares', () => {
+  const d = days(2);
+  const m = mkMarket({ X: d.map((date) => ({ date, price: 30, adjClose: 30 })) });
+  const p = newPortfolio({ id: 't', startedAt: d[0], cash: 0 });
+  p.positions.X = { shares: 100, costUsd: 3000, currency: 'USD', lastDate: d[0], lastPrice: 30 };
+  p.pending = { createdOn: d[0], sells: [{ symbol: 'X', usd: 1000 }], buys: [] };
+  fillPending(p, d[1], m, []);
+  assert.equal(p.positions.X.shares, 66);
+});

@@ -278,6 +278,35 @@ export const STRATEGIES = [
     }
   },
 
+  /* --- Claude traders (phase 2) --- */
+  ...[
+    {
+      id: 'claude-news',
+      name: 'Claude trader: short-term (news)',
+      maxPositions: 10,
+      rules:
+        'A daily Claude session (Opus, weeknights after the US close, instructions in mcp/automation/TRADER_NEWS.md) trades on news, the risk register and price action, holding days to a few weeks. It sees only its own desk (its portfolio, the universe, its journal) and read-only market and news tools: not the user\'s portfolio, research, insights or the other strategies. Long only, the month\'s universe plus the core funds, at most 10 positions, buys of $300+, no position above 20% of the portfolio; every decision states a reason, a "wrong if" and a horizon. Its orders fill at the next close.'
+    },
+    {
+      id: 'claude-fundamental',
+      name: 'Claude trader: fundamental',
+      maxPositions: 20,
+      rules:
+        'A weekly Claude session (Opus, Saturdays, instructions in mcp/automation/TRADER_FUNDAMENTAL.md) picks stocks on fundamentals: valuation on recurring earnings, statements, estimate revisions, results and guidance, and news, holding for months. It sees only its own desk and read-only market tools (no optimiser, no user portfolio, research, insights or other strategies) and keeps its own theses. Long only, the month\'s universe plus the core funds, at most 20 positions, buys of $300+, no position above 20% of the portfolio; every decision states a reason, a "wrong if" and a horizon. Its orders fill at the next close.'
+    }
+  ].map((t) => ({
+    ...t,
+    group: 'Claude traders',
+    claude: true,
+    decide(ctx, p) {
+      const o = ctx.claudeOrders?.(t.id);
+      if (!o) return null;
+      const { order, rejected } = ordersFromClaude(o, p, ctx, { maxPositions: t.maxPositions });
+      if (rejected.length) p.notes.rejected = [...(p.notes.rejected || []), ...rejected].slice(-50);
+      return order;
+    }
+  })),
+
   /* --- controls --- */
   {
     id: 'equal-weight',
@@ -348,6 +377,84 @@ export const STRATEGIES = [
     }
   }))
 ].map((s) => ({ version: VERSION, ...s }));
+
+/** Funds a Claude trader may hold besides the universe stocks (somewhere to wait). */
+export const TRADER_FUNDS = ['ISWD', 'ISDE', 'MZNPETF', 'HSKD.L'];
+
+/**
+ * Turn a Claude trader's orders.json into an engine order set, enforcing its
+ * rules in code: universe or core funds only, sells only of holdings, buys of
+ * $300+, at most 20% of the portfolio in one name (including what is held),
+ * at most `maxPositions` names. Anything else is rejected with the reason.
+ *   o: { asOf, createdOn, decisions: [{ symbol, action: buy|trim|sell, usd?, reason, wrongIf, horizon }] }
+ */
+export function ordersFromClaude(o, p, ctx, { maxPositions }) {
+  const rejected = [];
+  const reject = (d, why) => rejected.push({ date: o.createdOn, symbol: d?.symbol ?? null, action: d?.action ?? null, why });
+  const allowed = new Set([...ctx.stocks, ...TRADER_FUNDS]);
+  const held = new Set(Object.keys(p.positions));
+  const heldValue = (s) => {
+    const pos = p.positions[s];
+    const b = pos && ctx.bars(s).at(-1);
+    const fx = pos && (pos.currency === 'USD' ? 1 : ctx.market?.rates?.[pos.currency] > 0 ? 1 / ctx.market.rates[pos.currency] : 0);
+    return b && fx ? pos.shares * b.price * fx : 0;
+  };
+  const sells = [];
+  const buys = [];
+  const reasons = {};
+  const exiting = new Set();
+  for (const d0 of Array.isArray(o.decisions) ? o.decisions : []) {
+    const d = { ...d0, symbol: String(d0?.symbol || '').toUpperCase(), action: String(d0?.action || '').toLowerCase() };
+    if (!d.reason || !d.wrongIf) {
+      reject(d, 'missing reason or wrongIf');
+      continue;
+    }
+    if (d.action === 'sell' || d.action === 'trim') {
+      if (!held.has(d.symbol)) {
+        reject(d, 'not held');
+        continue;
+      }
+      if (d.action === 'trim' && !(Number(d.usd) > 0)) {
+        reject(d, 'trim needs usd');
+        continue;
+      }
+      sells.push(d.action === 'sell' ? d.symbol : { symbol: d.symbol, usd: Number(d.usd), reason: d.reason });
+      if (d.action === 'sell') exiting.add(d.symbol);
+      reasons[d.symbol] = d.reason;
+    } else if (d.action === 'buy') {
+      const usd = Number(d.usd);
+      if (!allowed.has(d.symbol)) {
+        reject(d, 'outside the universe and core funds');
+        continue;
+      }
+      if (!(usd >= 300)) {
+        reject(d, 'buys must be $300 or more');
+        continue;
+      }
+      if (!ctx.bars(d.symbol).length) {
+        reject(d, 'no price data');
+        continue;
+      }
+      const cap = 0.2 * ctx.value - heldValue(d.symbol);
+      if (cap < 300) {
+        reject(d, 'already at the 20% limit');
+        continue;
+      }
+      buys.push({ symbol: d.symbol, usd: Math.min(usd, cap), reason: d.reason, meta: { reason: d.reason, wrongIf: d.wrongIf, horizon: d.horizon ?? null, decided: o.createdOn } });
+    } else reject(d, `unknown action "${d.action}"`);
+  }
+  // Position limit: names after the sells, new names in the order given.
+  const after = new Set([...held].filter((s) => !exiting.has(s)));
+  const kept = [];
+  for (const b of buys) {
+    if (after.has(b.symbol) || after.size < maxPositions) {
+      after.add(b.symbol);
+      kept.push(b);
+    } else reject(b, `more than ${maxPositions} positions`);
+  }
+  const order = sells.length || kept.length ? { createdOn: o.createdOn, sells, buys: kept, reasons, reason: 'Claude trader' } : null;
+  return { order, rejected };
+}
 
 /** Every symbol a strategy may need prices for beyond the universe. */
 export const EXTRA_SYMBOLS = ['ISWD', 'ISDE', 'MZNPETF', 'HSKD.L', 'ACWI', 'SPTE', 'UMMA', 'SPUS', 'ISDU', 'FFC', 'MEBL', 'OGDC'];

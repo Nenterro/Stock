@@ -380,6 +380,18 @@ on Opus.
   - `pack`: Monday 22:15.
   - `signals`: the 2nd at 03:00. Scores the policy's Pakistan sizing signals
     into `research/pakistan-signals.md` and a "Pakistan signals" insight.
+  - `trader-news` (weeknights 21:30, after the US close) and
+    `trader-fundamental` (Saturdays 06:00): the two Claude traders of the
+    paper-trading forward test (`TRADER_NEWS.md`, `TRADER_FUNDAMENTAL.md`).
+    Each runs on its own desk, `~/stock-automation/traders/<id>/`
+    (`brief.json` from the nightly paper run, `journal.md`, `theses/`), with
+    market and news tools only and deny rules on the records, the other desk
+    and the logs, so its record stays independent. It writes `orders.json`;
+    the next paper run checks it in code (`strategies.ordersFromClaude`:
+    universe or core funds, $300+, 20% per name, position limit, reason and
+    "wrong if" required), archives it with a decision ledger under
+    `strategies/claude/<id>/`, and fills it at the next close. Own lock, so
+    they don't wait behind the other tasks.
 - `cron.sh paper`: weeknights 23:30, after every market's close. The
   strategy forward test (paper trading, `mcp/paper/`, since 25 November
   2026): about 18 strategies (System, optimiser at risk aversion 1/2/4,
